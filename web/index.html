@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SkyProof Rollup</title>
+    <meta name="description" content="A post-quantum flight-record rollup for autonomous drones on QoreChain." />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🛸</text></svg>" />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <header class="top">
+      <div class="wrap">
+        <div class="brand"><span class="logo">🛸</span> SkyProof <span class="muted">Rollup</span></div>
+        <div id="live" class="pill">connecting…</div>
+      </div>
+    </header>
+
+    <main class="wrap">
+      <section class="hero">
+        <h1>A black box for autonomous drones that the operator cannot edit, hide or forge.</h1>
+        <p class="lead">
+          Every flight goes into a QoreChain rollup. The drone signs it with <b>ML-DSA-87</b>, the records are sealed with
+          <b>ML-KEM-1024</b> so only the investigator and insurer can read them, every batch is anchored on QoreChain, and a
+          <b>watchtower</b> re-checks each one and pays victims when a safety rule was broken.
+        </p>
+        <ol class="steps">
+          <li><b>Fly</b> the drone signs its records</li>
+          <li><b>Seal</b> ML-KEM-1024 to investigator + insurer</li>
+          <li><b>Settle</b> batches anchored under ML-DSA-87</li>
+          <li><b>Watch</b> re-execute, judge, challenge fraud</li>
+          <li><b>Pay</b> withdrawals on QoreChain</li>
+        </ol>
+      </section>
+
+      <section>
+        <h2>Rollup</h2>
+        <div id="rollup" class="cards"></div>
+      </section>
+
+      <section>
+        <h2>Flights <span class="muted small">drone signatures are verified in your browser</span></h2>
+        <div id="flights"></div>
+      </section>
+
+      <section>
+        <h2>Batches <span class="muted small">settlement receipts are verified live against QoreChain</span></h2>
+        <div id="batches"></div>
+      </section>
+
+      <section>
+        <h2>Inbox <span class="muted small">every post, read back from the chain</span></h2>
+        <div id="posts"></div>
+      </section>
+    </main>
+
+    <footer class="wrap muted small">
+      qorechain-diana testnet · <a href="https://github.com/ponram06/skyproof-qorex">source</a> ·
+      <a href="https://build.qorechain.io/p/skyproof">Build Before Q-Day</a> · <span id="generated"></span>
+    </footer>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,22 @@
+{
+  "name": "skyproof-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "Apache-2.0",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@noble/hashes": "^1.8.0",
+    "@qorechain/rdk": "0.9.0",
+    "@qorechain/sdk": "^0.14.0",
+    "buffer": "^6.0.3"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2",
+    "vite": "^6.0.7"
+  }
+}
