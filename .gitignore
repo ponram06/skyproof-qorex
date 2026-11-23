@@ -5,5 +5,5 @@ dist/
 !.env.example
 *.log
 keys/
-flights/local/
+**/flights/local/
 .DS_Store
