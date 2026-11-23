@@ -4,85 +4,110 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>SkyProof Rollup</title>
-    <meta name="description" content="A post-quantum flight-record rollup for autonomous drones on QoreChain." />
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🛸</text></svg>" />
+    <meta name="description" content="A post-quantum flight-record rollup for autonomous drones, live on QoreChain testnet." />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%23b9f227'/><path d='M8 16h16M16 8v16M10 10l12 12M22 10L10 22' stroke='%23111' stroke-width='2.4' stroke-linecap='round'/></svg>" />
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
-    <header class="top">
-      <div class="wrap">
-        <div class="brand"><span class="logo">🛸</span> SkyProof <span class="muted">Rollup</span></div>
-        <div id="live" class="pill">connecting…</div>
-      </div>
+    <header class="bar">
+      <a class="logo" href="#top"><span class="mark" aria-hidden="true"></span>SkyProof</a>
+      <nav class="nav">
+        <a href="#arena">Arena</a><a href="#flights">Flights</a><a href="#investigator">Investigator</a><a href="#settlement">Settlement</a><a href="#fraud">Fraud proofs</a>
+      </nav>
+      <span id="live" class="pill">connecting…</span>
     </header>
 
-    <main class="wrap">
+    <main id="top">
       <section class="hero">
-        <h1>A black box for autonomous drones that the operator cannot edit, hide or forge.</h1>
-        <p class="lead">
-          Every flight goes into a QoreChain rollup. The drone signs it with <b>ML-DSA-87</b>, the records are sealed with
-          <b>ML-KEM-1024</b> so only the investigator and insurer can read them, every batch is anchored on QoreChain, and a
-          <b>watchtower</b> re-checks each one and pays victims when a safety rule was broken.
-        </p>
-        <ol class="steps">
-          <li><b>Fly</b> the drone signs its records</li>
-          <li><b>Seal</b> ML-KEM-1024 to investigator + insurer</li>
-          <li><b>Settle</b> batches anchored under ML-DSA-87</li>
-          <li><b>Watch</b> re-execute, judge, challenge fraud</li>
-          <li><b>Pay</b> withdrawals on QoreChain</li>
-        </ol>
-      </section>
-
-      <section>
-        <h2>Fly a drone <span class="muted small">the real simulator and rules, running in your browser</span></h2>
-        <div class="card inv">
-          <label>Scenario <select id="simScenario"></select></label>
-          <button class="primary" id="simFly">Fly</button>
-          <p class="muted small" id="simAbout"></p>
+        <div class="hero-main">
+          <div class="kicker">Rollup · skyproof-1 · qorechain-diana</div>
+          <h1 class="giant">Sky<br />Proof</h1>
+          <p class="hero-sub">A post-quantum black box for autonomous drones.</p>
         </div>
-        <div id="simOut"></div>
+        <div class="hero-side">
+          <p class="statement">
+            When an autonomous drone hurts someone, the only flight log belongs to the operator. SkyProof seals every
+            flight into a QoreChain rollup that no operator can edit, hide or forge, and pays the victim when a safety
+            rule was broken.
+          </p>
+          <div class="status">
+            <div class="status-h">System status</div>
+            <ol id="status" class="status-list"></ol>
+          </div>
+        </div>
       </section>
 
-      <section>
-        <h2>Rollup</h2>
-        <div id="rollup" class="cards"></div>
+      <section id="arena" class="arena-section">
+        <div class="arena-head">
+          <div>
+            <div class="kicker">The arena · real simulator and rules, running in your browser</div>
+            <h2>Watch a drone decide.</h2>
+          </div>
+          <div class="chips" id="chips" role="tablist" aria-label="Scenario"></div>
+        </div>
+        <div class="arena-grid">
+          <div id="simView"></div>
+          <aside class="verdict-panel" id="simVerdict"></aside>
+        </div>
       </section>
 
-      <section>
-        <h2>Flights <span class="muted small">drone signatures are verified in your browser</span></h2>
-        <div id="flights"></div>
+      <section class="three">
+        <article>
+          <div class="kicker">01 · Fly &amp; sign</div>
+          <h3>Every move needs a fresh approval.</h3>
+          <p>Before each take-off, drop and landing the drone asks its safety gate. It acts only on an ALLOW bound to that exact request; each record is hash-chained and every segment is signed with <b>ML-DSA-87</b>.</p>
+        </article>
+        <article>
+          <div class="kicker">02 · Seal &amp; settle</div>
+          <h3>A black box nobody can quietly edit.</h3>
+          <p>Segments are sealed with <b>ML-KEM-1024</b> to the investigator and insurer and posted to an <b>x/rdk rollup</b>. Each batch is anchored on QoreChain under the creator's ML-DSA-87 signature.</p>
+        </article>
+        <article>
+          <div class="kicker">03 · Watch &amp; pay</div>
+          <h3>Broken rule? The victim is paid.</h3>
+          <p>The <b>watchtower</b> re-executes every batch and challenges fraud. It opens claimed flights, applies six rules, and pays the victim from the operator's bond as a <b>withdrawal</b> on QoreChain.</p>
+        </article>
       </section>
 
-      <section>
-        <h2>Investigator view <span class="muted small">open sealed records with the investigator's ML-KEM-1024 key, in your browser</span></h2>
-        <div class="card inv">
-          <label>Investigator key file <input type="file" id="invKey" accept=".json" /></label>
-          <label>Flight <select id="invFlight"></select></label>
-          <button class="primary" id="invOpen" disabled>Open the sealed record</button>
-          <p class="muted small">Without the key, the bodies on chain are ML-KEM-1024 ciphertext. Create the demo key with <code>npm run investigator-key</code> in <code>rollup/</code>.</p>
+      <section class="stats" id="stats"></section>
+
+      <section id="flights" class="block">
+        <div class="block-head"><div class="kicker">On chain</div><h2>Flights</h2><p>Each segment's drone signature is verified in your browser, from headers read back from QoreChain.</p></div>
+        <div id="flightList"></div>
+      </section>
+
+      <section id="investigator" class="block dark">
+        <div class="block-head"><div class="kicker">ML-KEM-1024 · client side</div><h2>Investigator view</h2><p>Open a sealed record with the investigator's key, in your browser, and replay it in the arena. Without the key the bodies on chain are ciphertext.</p></div>
+        <div class="inv-form">
+          <label>Investigator key file<input type="file" id="invKey" accept=".json" /></label>
+          <label>Flight<select id="invFlight"></select></label>
+          <button class="btn lime" id="invOpen" disabled>Open the sealed record</button>
+          <span class="hint">Create the demo key with <code>npm run investigator-key</code> in <code>rollup/</code>.</span>
         </div>
         <div id="invOut"></div>
       </section>
 
-      <section>
-        <h2>Batches <span class="muted small">settlement receipts are verified live against QoreChain</span></h2>
+      <section id="settlement" class="block">
+        <div class="block-head"><div class="kicker">x/rdk · qledger-v1</div><h2>Settlement</h2><p>Every batch is anchored under ML-DSA-87. Verify any receipt live against QoreChain.</p></div>
         <div id="batches"></div>
       </section>
 
-      <section>
-        <h2>Fraud proofs upheld on chain <span class="muted small">a batch that lies about the ledger is rejected and its submitter slashed</span></h2>
-        <div id="fraud"></div>
+      <section id="fraud" class="block">
+        <div class="block-head"><div class="kicker">Optimistic re-execution</div><h2>Fraud proofs upheld</h2><p>A batch that lies about the ledger is rejected and its submitter slashed.</p></div>
+        <div id="fraudList"></div>
       </section>
 
-      <section>
-        <h2>Inbox <span class="muted small">every post, read back from the chain</span></h2>
-        <div id="posts"></div>
+      <section class="block">
+        <details class="inbox">
+          <summary><span class="kicker">Rollup inbox</span> Every post, read back from the chain</summary>
+          <div id="posts"></div>
+        </details>
       </section>
     </main>
 
-    <footer class="wrap muted small">
-      qorechain-diana testnet · <a href="https://github.com/ponram06/skyproof-qorex">source</a> ·
-      <a href="https://build.qorechain.io/p/skyproof">Build Before Q-Day</a> · <span id="generated"></span>
+    <footer class="foot">
+      <span>SkyProof Rollup · QoreChain Build Before Q-Day · Protocol Builders</span>
+      <span><a href="https://github.com/ponram06/skyproof-qorex">Source</a> · <a href="https://build.qorechain.io/p/skyproof">Project</a> · <span id="generated"></span></span>
     </footer>
     <script type="module" src="/src/main.ts"></script>
   </body>
