@@ -110,7 +110,8 @@ async function once() {
 async function main() {
   do {
     await once();
-    if (process.argv.includes("--loop")) await new Promise((r) => setTimeout(r, 30_000));
+    // Fraud is challenged within blocks on testnet (another watcher did it 8 blocks after submission), so poll fast.
+    if (process.argv.includes("--loop")) await new Promise((r) => setTimeout(r, 6_000));
   } while (process.argv.includes("--loop"));
 }
 

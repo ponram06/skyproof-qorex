@@ -73,3 +73,15 @@ Cost of the two flights with their 36 posts: about 4.2 test QOR in fees.
 | Batch 1 finalized after the 3,600 s challenge window, no challenge | — |
 | **`MsgExecuteWithdrawal`**: 5 QOR from the rollup escrow to the victim (event `rdk_withdrawal_executed`, batch 1, withdrawal 0) | `2C6A0DDBC423727AEA71D1315E99D01CB7CABD1D46674119CDC0F80856767FB2` |
 | **Batch 3** (the cheating flight's payout) | `1C060C7E2040357CD48264FE984E570E1595C6221B0F881BFE8C1DF0D522792E` |
+
+## Fraud demo: a rogue submitter tries to steal the pool
+
+| Step | Tx |
+|---|---|
+| Rogue account `qor1lr28nffapg7gp4e68jspr0t2che3hmmxq3npq4` bonds 1,000 QOR as a second submitter | `DBE0FEA74961E30886556760FBFC8F8A69D52F1B493F3338976FD24FC76A0884` |
+| Rogue submits **batch 4** whose withdrawals root pays the whole 40 QOR pool to itself | `44692DFAB47CE0874691B84F5607275DC93CE52C91BDAEEAE4229F634A1147E0` (height 10,604,063) |
+| **Fraud upheld on chain**, 8 blocks later: event `rdk_fraud_upheld`, rogue bond slashed 1,000 QOR (500 burned, 500 to the challenger), inbox rolled back | `F1FC67BAD31F2DDB…` (height 10,604,071), challenger `qor1axgklr83mx8y0aluc5vgqrpw7uktwq7cu5nnhp` |
+| Our watchtower re-executed batch 4 and found the same fraud ("withdrawals root is wrong"); its challenge came after the batch was already rejected, so it was refused in simulation (no cost) | — |
+| Our watchtower rewound to the state before batch 4; the operator settled an honest **batch 4** in its place, roots match | `B6AE82B277B6037DFE84791CDE7C416455F1F1E9F87CEBF69DDE739C02D4A369` |
+
+What this shows: a batch that lies about withdrawals cannot steal from the pool on QoreChain. Another watcher on the network won the race to challenge it, so the watchtower's loop now polls every 6 s instead of 30 s.

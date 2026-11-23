@@ -14,8 +14,9 @@ import { kemKeypairFromSeed, qledgerKeypairFromSeed } from "@qorechain/rdk";
 import { deriveNativeAccount, generatePqcKeypair } from "@qorechain/sdk";
 import { enc, tagged } from "./util.js";
 
-export type Role = "operator" | "investigator" | "insurer" | "judge" | "victim";
-export const ROLE_INDEX: Record<Role, number> = { operator: 0, investigator: 1, insurer: 2, judge: 3, victim: 4 };
+/** `rogue` is the dishonest second submitter of the fraud demo (cli/fraud-demo.ts). */
+export type Role = "operator" | "investigator" | "insurer" | "judge" | "victim" | "rogue";
+export const ROLE_INDEX: Record<Role, number> = { operator: 0, investigator: 1, insurer: 2, judge: 3, victim: 4, rogue: 5 };
 
 export function mnemonic(): string {
   const m = process.env.QORE_MNEMONIC?.trim();
