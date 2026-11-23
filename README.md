@@ -87,6 +87,8 @@ npm run receipt -- <batch>        # verify the settlement receipt
 
 Website: `cd web && npm install && npm run dev` (data from `npm run export-web` in `rollup/`).
 
+Deploy the website: run `npx vercel` from the **repository root** (the page shares code with `rollup/`). `vercel.json` builds `web/` and serves the read-only QoreChain proxy in [`api/proxy.ts`](api/proxy.ts).
+
 ## Credits
 
 - [`@qorechain/rdk`](https://github.com/qorechain/qorechain-rdk) (Apache-2.0): rollup client, qledger-v1, envelopes, settlement receipts.

@@ -9,5 +9,5 @@
     "noEmit": true,
     "resolveJsonModule": true
   },
-  "include": ["src", "api", "../rollup/src/rules.ts", "../rollup/src/flight/record.ts", "../rollup/src/flight/scenarios.ts", "../rollup/src/sim", "../rollup/src/util.ts"]
+  "include": ["src", "../api", "../rollup/src/rules.ts", "../rollup/src/flight/record.ts", "../rollup/src/flight/scenarios.ts", "../rollup/src/sim", "../rollup/src/util.ts"]
 }

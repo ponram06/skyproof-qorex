@@ -1,0 +1,6 @@
+{
+  "installCommand": "cd web && npm ci",
+  "buildCommand": "cd web && npx vite build",
+  "outputDirectory": "web/dist",
+  "rewrites": [{ "source": "/api/:kind(rest|rpc)/:path*", "destination": "/api/proxy?kind=:kind&path=:path*" }]
+}
