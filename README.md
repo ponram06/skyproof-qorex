@@ -26,8 +26,8 @@ Every drone flight becomes data in an app-specific **QoreChain rollup** (x/rdk, 
 | `rollup/` preflight (live chain params, costs, keys) | working |
 | Rollup `skyproof-1` on qorechain-diana | live ([deployments](docs/DEPLOYMENTS.md)) |
 | Sealed flight records (ML-KEM-1024) | done, keys registered on chain |
-| Batch submitter with ML-DSA-87 anchors | not yet |
-| Watchtower + fraud proofs | not yet |
+| Batch submitter with ML-DSA-87 anchors | live: batch 0 settled |
+| Watchtower + fraud proofs | live: batch 0 checked, first verdicts |
 | Withdrawals (payout, bond exit) | not yet |
 | Settlement receipts | not yet |
 | Website | not yet |
