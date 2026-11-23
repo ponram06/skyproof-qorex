@@ -44,6 +44,17 @@
       </section>
 
       <section>
+        <h2>Investigator view <span class="muted small">open sealed records with the investigator's ML-KEM-1024 key, in your browser</span></h2>
+        <div class="card inv">
+          <label>Investigator key file <input type="file" id="invKey" accept=".json" /></label>
+          <label>Flight <select id="invFlight"></select></label>
+          <button class="primary" id="invOpen" disabled>Open the sealed record</button>
+          <p class="muted small">Without the key, the bodies on chain are ML-KEM-1024 ciphertext. Create the demo key with <code>npm run investigator-key</code> in <code>rollup/</code>.</p>
+        </div>
+        <div id="invOut"></div>
+      </section>
+
+      <section>
         <h2>Batches <span class="muted small">settlement receipts are verified live against QoreChain</span></h2>
         <div id="batches"></div>
       </section>

@@ -1,6 +1,7 @@
 import "./polyfill";
 import { buildSettlementReceipt, createRdkClient, verifySettlementReceipt } from "@qorechain/rdk";
 import { parseHeaderPost, verifyHeader, type SegmentHeader } from "./verify";
+import { drawFlight, openFlight, type InvestigatorData } from "./investigator";
 
 interface Data {
   generatedAt: string;
@@ -36,6 +37,7 @@ async function main() {
   renderFlights(data);
   renderBatches(data);
   renderPosts(data);
+  setupInvestigator(data);
   live(data).catch(() => ($("live").textContent = "chain offline: showing exported data"));
 }
 
@@ -141,6 +143,48 @@ function renderBatches(d: Data) {
       }
     }),
   );
+}
+
+function setupInvestigator(d: Data) {
+  const flights = [...new Set(d.headers.map((h) => parseHeaderPost(h.post).header.flight))];
+  const sel = $("invFlight") as HTMLSelectElement;
+  sel.innerHTML = flights.map((f) => `<option>${esc(f)}</option>`).join("");
+  let key: { address: string; seed: string } | undefined;
+  const btn = $("invOpen") as HTMLButtonElement;
+  ($("invKey") as HTMLInputElement).addEventListener("change", async (e) => {
+    const file = (e.target as HTMLInputElement).files?.[0];
+    if (!file) return;
+    try {
+      const k = JSON.parse(await file.text());
+      key = { address: k.address, seed: k.mlkem1024Seed };
+      btn.disabled = !key.address || !key.seed;
+    } catch {
+      $("invOut").innerHTML = `<p class="verdict paid">That is not an investigator key file.</p>`;
+    }
+  });
+  btn.addEventListener("click", () => {
+    if (!key) return;
+    try {
+      const r = openFlight(d as unknown as InvestigatorData, sel.value, key);
+      const rules = r.verdict.findings;
+      const decisions = r.recs.filter((x) => x.k === "DECISION");
+      const actions = r.recs.filter((x) => x.k === "ACTION");
+      $("invOut").innerHTML = `<div class="replay">
+        <div>${r.permit ? drawFlight(r.recs, r.permit, r.verdict) : ""}</div>
+        <div class="card">
+          <div class="k">Opened ${r.segments} sealed segments · ${r.recs.length} records</div>
+          <p>${r.errors.length ? tag(false, "record problems") : tag(true, "every segment matches its drone-signed header")}</p>
+          <p><b>Safety decisions:</b> ${decisions.map((x) => `${x.act} ${x.ok ? "ALLOW" : "DENY"}`).join(" · ") || "none (link lost)"}</p>
+          <p><b>Actions:</b> ${actions.map((x) => x.act).join(" · ")}</p>
+          <p><b>Verdict:</b> ${r.verdict.breach ? tag(false, "rule broken") : tag(true, "no rule broken")}</p>
+          <ul class="findings">${rules.map((f) => `<li><b>${esc(f.rule.replace("_", " "))}</b> ${f.seq !== undefined ? `(record #${f.seq})` : ""}: ${esc(f.detail)}</li>`).join("")}</ul>
+          <p class="muted small">Map: dashed green = permitted area, red = no-fly zone, purple = path, dots = actions (green), DENY decisions (orange), breaches (red).</p>
+        </div>
+      </div>`;
+    } catch (err) {
+      $("invOut").innerHTML = `<p class="verdict paid">Could not open: ${esc(err instanceof Error ? err.message : String(err))}</p>`;
+    }
+  });
 }
 
 function renderPosts(d: Data) {

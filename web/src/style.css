@@ -90,3 +90,15 @@ button.primary { background: var(--accent); border-color: var(--accent); color: 
 .checks li.no::before { content: "✖ "; color: var(--bad); }
 
 footer { padding: 24px 16px 48px; }
+
+.inv { display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: end; }
+.inv label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
+.inv select, .inv input { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; max-width: 100%; }
+.inv p { flex-basis: 100%; margin: 0; }
+.replay { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; margin-top: 12px; }
+@media (max-width: 760px) { .replay { grid-template-columns: 1fr; } }
+.map { width: 100%; height: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+.map .area { fill: color-mix(in srgb, var(--ok) 8%, transparent); stroke: var(--ok); stroke-dasharray: 6 5; }
+.map .nofly { fill: color-mix(in srgb, var(--bad) 16%, transparent); stroke: var(--bad); }
+.map .path { fill: none; stroke: var(--accent); stroke-width: 2.5; }
+.findings { margin: 0; padding-left: 18px; }

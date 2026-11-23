@@ -26,6 +26,7 @@ async function main() {
   }
 
   const drones: Record<string, unknown> = {};
+  const bodies: Record<string, string> = {};
   const headers: { batch: number; seq: number; height: number; post: string }[] = [];
   const posts: { batch: number; seq: number; height: number; poster: string; kind: string; detail: string }[] = [];
   const batches = [];
@@ -47,7 +48,11 @@ async function main() {
         const h = parseHeaderPost(p).header;
         headers.push({ batch: i, seq, height: Number(e.height), post: hex(p) });
         posts.push({ ...base, kind: "header", detail: `${h.flight} #${h.idx}` });
-      } else if (isBodyPost(p)) posts.push({ ...base, kind: "sealed body", detail: `${p.length} B, sha256 ${hex(sha256(p)).slice(0, 16)}…` });
+      } else if (isBodyPost(p)) {
+        // The ciphertext is public on chain already; only an ML-KEM key holder can open it.
+        bodies[hex(sha256(p))] = hex(p);
+        posts.push({ ...base, kind: "sealed body", detail: `${p.length} B, sha256 ${hex(sha256(p)).slice(0, 16)}…` });
+      }
       else if (parseClaim(p)) posts.push({ ...base, kind: "claim", detail: parseClaim(p)!.flight });
       else if (parseExit(p) !== undefined) posts.push({ ...base, kind: "bond exit", detail: `${parseExit(p)} uqor` });
       else if (decodeQledgerDeposit(p)) posts.push({ ...base, kind: "deposit", detail: `${decodeQledgerDeposit(p)!.amount} uqor` });
@@ -78,6 +83,7 @@ async function main() {
     drones,
     batches: batches.map((b) => ({ ...b, tx: submitter.batches?.find((s) => s.index === b.index)?.tx, withdrawals: submitter.batches?.find((s) => s.index === b.index)?.withdrawals ?? [] })),
     headers,
+    bodies,
     posts,
     claims: tower.watch?.claims ?? [],
     watchtower: tower.log ?? [],
