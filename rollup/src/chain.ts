@@ -31,6 +31,7 @@ export async function connect(role: Role): Promise<RoleClient> {
     rpcEndpoint: rdk.network.endpoints.rpc,
     signer,
     pqcKeypair: pqc.keypair,
+    rest: rdk.network.endpoints.rest,
     clientOptions: { gasPrice: GasPrice.fromString(GAS_PRICE) },
   });
   return { role, address: acct.address, rdkTx, tx, pqcKeypair: pqc.keypair, pqcRegistered: pqc.registered };

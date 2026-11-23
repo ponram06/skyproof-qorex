@@ -39,7 +39,9 @@ async function main() {
     const c = await connect(role);
     const k = kemKey(role);
     const onChain = await rdk.rest.getKemKey(c.address);
-    if (onChain && onChain.publicKey.toLowerCase().replace(/^0x/, "") === hex(k.publicKey)) {
+    const pk = onChain?.publicKey ?? "";
+    const onChainHex = /^(0x)?[0-9a-f]+$/i.test(pk) ? pk.toLowerCase().replace(/^0x/, "") : Buffer.from(pk, "base64").toString("hex");
+    if (onChainHex === hex(k.publicKey)) {
       console.log(`  ${role}: ML-KEM-1024 key already registered`);
       continue;
     }
