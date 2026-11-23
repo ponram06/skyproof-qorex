@@ -47,7 +47,8 @@ export interface ActionRec extends Base {
 export interface CloseRec extends Base {
   k: "CLOSE";
 }
-export type Action = "TAKEOFF" | "DROP" | "LAND" | "REROUTE";
+/** SAFE_STOP is the pre-approved emergency landing: it never needs the gate. */
+export type Action = "TAKEOFF" | "DROP" | "LAND" | "REROUTE" | "SAFE_STOP";
 export type FlightRecord = OpenRec | SampleRec | DecisionRec | ActionRec | CloseRec;
 
 export const GENESIS = new Uint8Array(32);

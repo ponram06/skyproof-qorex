@@ -3,7 +3,7 @@
  * then each segment's sealed body and signed header.
  *
  * Usage: fly <scenario> [--withhold]
- *   scenarios: normal, geofence, altitude, override, unapproved, wind
+ *   scenarios: normal, people_below, link_lost, cheating, unapproved, shortcut, altitude, wind
  *   --withhold: the operator "loses" one segment body (a B5 breach)
  */
 import { connect, txLine } from "../chain.js";
@@ -11,7 +11,8 @@ import { rdk, ROLLUP_ID } from "../config.js";
 import { droneKey, kemKey, account } from "../keys.js";
 import { GENESIS } from "../flight/record.js";
 import { droneRegPost } from "../flight/posts.js";
-import { DEMO_PERMIT, fly, SCENARIOS, type Scenario } from "../flight/scenarios.js";
+import { DEMO_PERMIT } from "../flight/scenarios.js";
+import { simulate, SIM_SCENARIOS, type SimScenario } from "../sim/sim.js";
 import { sealSegment } from "../flight/segment.js";
 import { load, save } from "../state.js";
 import { canonical, enc, hex, sha256 } from "../util.js";
@@ -27,8 +28,8 @@ export interface FlightLog {
 }
 
 async function main() {
-  const scenario = process.argv[2] as Scenario;
-  if (!SCENARIOS.includes(scenario)) throw new Error(`scenario must be one of: ${SCENARIOS.join(", ")}`);
+  const scenario = process.argv[2] as SimScenario;
+  if (!SIM_SCENARIOS.includes(scenario)) throw new Error(`scenario must be one of: ${SIM_SCENARIOS.join(", ")}`);
   const withhold = process.argv.includes("--withhold");
 
   const op = await connect("operator");
@@ -47,7 +48,7 @@ async function main() {
 
   const flight = `${DRONE}-${scenario}-${Date.now()}`;
   const permitHash = hex(sha256(enc.encode(canonical(DEMO_PERMIT))));
-  const recs = fly(scenario, flight, DRONE, permitHash);
+  const recs = simulate({ scenario, flight, drone: DRONE, permit: DEMO_PERMIT, permitHash, seed: Date.now() % 100_000 });
   console.log(`flight ${flight}: ${recs.length} records`);
 
   const log: FlightLog = { flight, scenario, withheld: [], segments: [] };
