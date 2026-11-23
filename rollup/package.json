@@ -17,7 +17,8 @@
     "watch": "tsx src/cli/watchtower.ts",
     "withdraw": "tsx src/cli/withdraw.ts",
     "receipt": "tsx src/cli/receipt.ts",
-    "exit": "tsx src/cli/exit.ts"
+    "exit": "tsx src/cli/exit.ts",
+    "dry-run": "tsx src/cli/dry-run.ts"
   },
   "dependencies": {
     "@cosmjs/stargate": "^0.39.0",
