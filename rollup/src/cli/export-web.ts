@@ -74,6 +74,18 @@ async function main() {
     });
   }
 
+  // Fraud proofs the chain upheld against this rollup, read from the event index.
+  const fraud: { tx: string; height: number; batch: string; challenger: string; slashed: string; burned: string }[] = [];
+  const q = encodeURIComponent(`rdk_fraud_upheld.rollup_id='${ROLLUP_ID}'`);
+  const found = (await fetch(`${rdk.network.endpoints.rest}/cosmos/tx/v1beta1/txs?query=${q}&pagination.limit=50`).then((r) => r.json()).catch(() => ({}))) as {
+    tx_responses?: { txhash: string; height: string; events: { type: string; attributes: { key: string; value: string }[] }[] }[];
+  };
+  for (const r of found.tx_responses ?? [])
+    for (const e of r.events.filter((x) => x.type === "rdk_fraud_upheld")) {
+      const a = Object.fromEntries(e.attributes.map((x) => [x.key, x.value]));
+      fraud.push({ tx: r.txhash, height: Number(r.height), batch: a.batch_index, challenger: a.challenger, slashed: a.slashed, burned: a.burned });
+    }
+
   const tower = load<{ watch?: WatchState; log?: unknown[]; pending?: unknown[] }>("watchtower", {});
   const submitter = load<{ batches?: { index: number; withdrawals: unknown[]; tx: string }[] }>("submitter", {});
   const out = {
@@ -88,6 +100,7 @@ async function main() {
     claims: tower.watch?.claims ?? [],
     watchtower: tower.log ?? [],
     withdrawalsExecuted: load("withdrawals", {}),
+    fraud,
   };
   const dir = resolve(process.cwd(), "../web/public");
   mkdirSync(dir, { recursive: true });

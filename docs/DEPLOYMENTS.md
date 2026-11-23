@@ -73,6 +73,7 @@ Cost of the two flights with their 36 posts: about 4.2 test QOR in fees.
 | Batch 1 finalized after the 3,600 s challenge window, no challenge | — |
 | **`MsgExecuteWithdrawal`**: 5 QOR from the rollup escrow to the victim (event `rdk_withdrawal_executed`, batch 1, withdrawal 0) | `2C6A0DDBC423727AEA71D1315E99D01CB7CABD1D46674119CDC0F80856767FB2` |
 | **Batch 3** (the cheating flight's payout) | `1C060C7E2040357CD48264FE984E570E1595C6221B0F881BFE8C1DF0D522792E` |
+| **`MsgExecuteWithdrawal`**: second 5 QOR payout to the victim (batch 3, withdrawal 1) | `B3DDADBFFAE7E44F612C8AB6666ADAF8E4FA75B9DB5F19B0BB5CC1BF51BE7CF6` |
 
 ## Fraud demo: a rogue submitter tries to steal the pool
 

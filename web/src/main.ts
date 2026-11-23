@@ -11,6 +11,8 @@ interface Data {
   batches: { index: number; status: string; inboxStart: number; inboxEnd: number; submittedTime: number; tx?: string; withdrawals: { recipient: string; amount: string }[] }[];
   headers: { batch: number; seq: number; height: number; post: string }[];
   posts: { batch: number; seq: number; height: number; poster: string; kind: string; detail: string }[];
+  fraud?: { tx: string; height: number; batch: string; challenger: string; slashed: string; burned: string }[];
+  withdrawalsExecuted?: Record<string, string>;
   claims: { flight: string; victim: string; note: string; status: string; verdict?: { breach: boolean; findings: { rule: string; detail: string; seq?: number }[] } }[];
 }
 
@@ -37,6 +39,7 @@ async function main() {
   renderFlights(data);
   renderBatches(data);
   renderPosts(data);
+  renderFraud(data);
   setupInvestigator(data);
   live(data).catch(() => ($("live").textContent = "chain offline: showing exported data"));
 }
@@ -121,7 +124,7 @@ function renderBatches(d: Data) {
     (b) => `<tr>
       <td><b>#${b.index}</b></td>
       <td>${b.inboxEnd - b.inboxStart} posts <span class="muted">(${b.inboxStart + 1}–${b.inboxEnd})</span></td>
-      <td>${b.withdrawals.length ? b.withdrawals.map((w) => `${qor(w.amount)} QOR → ${short(w.recipient, 8)}`).join("<br>") : '<span class="muted">none</span>'}</td>
+      <td>${b.withdrawals.length ? b.withdrawals.map((w: { index?: string; recipient: string; amount: string }) => `${qor(w.amount)} QOR → ${short(w.recipient, 8)} ${w.index !== undefined && d.withdrawalsExecuted?.[w.index] ? tag(true, "paid on QoreChain") : ""}`).join("<br>") : '<span class="muted">none</span>'}</td>
       <td class="status" data-b="${b.index}">${b.status === "finalized" ? tag(true, "finalized") : tag("warn", b.status)}</td>
       <td><button class="primary" data-receipt="${b.index}">Verify receipt</button><ul class="checks" id="r${b.index}"></ul></td>
     </tr>`,
@@ -185,6 +188,16 @@ function setupInvestigator(d: Data) {
       $("invOut").innerHTML = `<p class="verdict paid">Could not open: ${esc(err instanceof Error ? err.message : String(err))}</p>`;
     }
   });
+}
+
+function renderFraud(d: Data) {
+  const rows = (d.fraud ?? []).map(
+    (f) => `<tr><td>#${esc(f.batch)}</td><td class="mono">${esc(short(f.tx, 10))}</td><td>${f.height.toLocaleString()}</td><td>${qor(f.slashed.replace("uqor", ""))} QOR slashed, ${qor(f.burned.replace("uqor", ""))} burned</td><td class="mono">${esc(short(f.challenger, 10))}</td></tr>`,
+  );
+  $("fraud").innerHTML = rows.length
+    ? `<div class="scroll"><table class="table"><thead><tr><th>Batch</th><th>Tx</th><th>Height</th><th>Penalty</th><th>Challenger</th></tr></thead><tbody>${rows.join("")}</tbody></table></div>
+       <p class="muted small">A second, bonded submitter published a batch whose withdrawals root paid the whole pool to itself. The chain re-executed it, upheld the fraud proof and rolled the inbox back; the honest batch replaced it.</p>`
+    : `<p class="muted">None so far.</p>`;
 }
 
 function renderPosts(d: Data) {
