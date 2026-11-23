@@ -53,3 +53,14 @@ Read it: `curl -s https://api-testnet.qore.host/qorechain/rdk/v1/rollup/skyproof
 ## Settlement receipt, batch 0
 
 `npm run receipt -- 0` → **VALID (chain mode)**: layer binding, batch state root, anchor on chain, creator authority, ML-DSA-87 signature, chain binding. Anchored at main-chain height 10,600,497. Full receipt: [`rollup/receipts/skyproof-1-batch-0.json`](../rollup/receipts/skyproof-1-batch-0.json).
+
+## Simulated flights (drone simulator + safety gate)
+
+| Step | Tx |
+|---|---|
+| Flight `SKY-001-people_below-1795418572924`: 98 records, 9 sealed segments; DROP denied twice while a person stood at the drop point, then a fresh ALLOW | claim `C3146A1326D29E703C022D92CF51A7C3318B034BBD1568A46E6168B0D4B3D8C6` |
+| Flight `SKY-001-cheating-1795418690032`: 94 records; the operator dropped on a DENY | claim `CB9D07425EC85AFFAE5F32A407B17360EF2811A11DC7ED080E58BFB860E0B2BF` |
+| **Batch 2**: 36 inbox entries, anchored under ML-DSA-87 | `5C9CDF18C9D5E1068616A63C8360A876918EBABDB8B50CAC60B17839D0BFB1AB` |
+| Watchtower: people_below judged clean, claim **rejected**; cheating judged **B4_OVERRIDE**, 5 QOR payout posted | `91F30004C96865B2CED39620062C7DBF8634F6F645363F3248D43F1E4EC9AC31` |
+
+Cost of the two flights with their 36 posts: about 4.2 test QOR in fees.
