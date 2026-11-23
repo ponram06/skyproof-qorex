@@ -33,7 +33,7 @@ flowchart LR
 | Requirement | How | Proof |
 |---|---|---|
 | ML-DSA-signed batches | Creator's ML-DSA-87 `anchor_signature` on every `MsgSubmitBatch` | batch txs in [DEPLOYMENTS](docs/DEPLOYMENTS.md) |
-| Verified settlement receipt | `verifySettlementReceipt` against live chain state: 6/6 checks | [`rollup/receipts/`](rollup/receipts) · website "Verify receipt" |
+| Verified settlement receipt | `verifySettlementReceipt` against live chain state: 6/6 checks | [`rollup/receipts/`](rollup/receipts) · website, Proof page, "Verify" |
 | Watchtower | Re-execution + qledger fraud proofs + flight judging | [`rollup/src/watchtower.ts`](rollup/src/watchtower.ts), [`ledger.ts`](rollup/src/ledger.ts) |
 | Withdrawal | Payouts and bond exits as qledger `WITHDRAW` → `MsgExecuteWithdrawal` | 5 QOR paid to a victim on testnet: tx `2C6A0DDB…` ([DEPLOYMENTS](docs/DEPLOYMENTS.md)) |
 | ML-KEM data protection | Segments sealed to registered ML-KEM-1024 keys; the chain only stores ciphertext | [`rollup/src/flight/segment.ts`](rollup/src/flight/segment.ts) |
@@ -55,7 +55,7 @@ flowchart LR
 | Folder | What |
 |---|---|
 | [`rollup/`](rollup) | TypeScript: records, sealing, rules, ledger, watchtower, CLI for every step |
-| [`web/`](web) | Website: fly any scenario in the browser with a 3D replay, in-browser ML-DSA-87 checks, live receipt verification, tamper demo, investigator view (ML-KEM decryption + 3D replay of on-chain flights), upheld fraud proofs |
+| [`web/`](web) | Website with five pages: **Home** (3D demo of all eight scenarios, judged in the browser by the same rules code), **Flights** (ML-DSA-87 checks and a tamper test), **Claims** (look up your claims and balance), **Proof** (live receipt verification, payouts, upheld fraud proofs), **Investigate** (ML-KEM-1024 decryption and 3D replay of on-chain flights) |
 | [`docs/`](docs) | [Design](docs/DESIGN.md), [threat model](docs/THREAT_MODEL.md), [deployments](docs/DEPLOYMENTS.md) |
 
 ## Run it
