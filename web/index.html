@@ -3,127 +3,37 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>SkyProof</title>
-    <meta name="description" content="A tamper-proof black box for delivery drones. If a drone breaks a safety rule and hurts someone, the victim is paid automatically. Live on QoreChain testnet." />
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%23b9f227'/><path d='M8 16h16M16 8v16M10 10l12 12M22 10L10 22' stroke='%23111' stroke-width='2.4' stroke-linecap='round'/></svg>" />
+    <title>SkyProof · Tamper-proof drone flight records</title>
+    <meta name="description" content="Drones record every move into a tamper-proof log on QoreChain. Break a safety rule, and the victim is paid automatically." />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%23111214'/><path d='M9 16h14M16 9v14' stroke='%23b9f227' stroke-width='3' stroke-linecap='round'/></svg>" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
-    <header class="bar">
-      <a class="logo" href="#top"><span class="mark" aria-hidden="true"></span>SkyProof</a>
-      <nav class="nav">
-        <a href="#arena">Try it</a><a href="#how">How it works</a><a href="#flights">Real flights</a><a href="#proof">Technical proof</a>
-      </nav>
-      <span id="live" class="pill">connecting…</span>
+    <header class="nav">
+      <div class="wrap nav-in">
+        <a class="logo" href="#/"><span class="logo-mark" aria-hidden="true"></span>SkyProof</a>
+        <nav class="links" aria-label="Main">
+          <a href="#/" data-r="">Home</a>
+          <a href="#/flights" data-r="flights">Flights</a>
+          <a href="#/claims" data-r="claims">Claims</a>
+          <a href="#/proof" data-r="proof">Proof</a>
+          <a href="#/investigate" data-r="investigate">Investigate</a>
+        </nav>
+        <span id="live" class="live" title="QoreChain testnet">Connecting…</span>
+        <button class="menu" id="menu" aria-label="Menu" aria-expanded="false"><span></span><span></span></button>
+      </div>
     </header>
 
-    <main id="top">
-      <section class="hero">
-        <div class="hero-main">
-          <div class="kicker">SkyProof · live on QoreChain testnet</div>
-          <h1 class="headline">A black box for delivery drones that <span class="hl">nobody can tamper with.</span></h1>
-          <p class="hero-sub">
-            If a drone breaks a safety rule and hurts someone, SkyProof proves it and pays the victim automatically.
-            Not even the drone company can edit, hide or fake the record.
-          </p>
-          <div class="cta">
-            <a class="btn big dark" href="#arena">▶ Watch a demo flight</a>
-            <a class="btn big" href="#flights">See real flights</a>
-          </div>
-        </div>
-        <aside class="hero-side">
-          <div class="side-h">Happening on the live network</div>
-          <div id="facts" class="big-facts"></div>
-          <details class="tech">
-            <summary>Technical details</summary>
-            <ol id="status" class="status-list"></ol>
-          </details>
-        </aside>
-      </section>
-
-      <section id="arena" class="arena-section">
-        <div class="arena-head">
-          <div>
-            <div class="kicker">Step 1 · Try it yourself</div>
-            <h2>Pick what happens on the flight.</h2>
-            <p class="lead">Each button plays a different flight in a 3D city. See if the drone stayed safe, and whether the victim would be paid.</p>
-          </div>
-        </div>
-        <div class="choices" id="chips" role="tablist" aria-label="Choose a flight"></div>
-        <div class="arena-grid">
-          <div id="simView"></div>
-          <aside class="verdict-panel" id="simVerdict" aria-live="polite"></aside>
-        </div>
-      </section>
-
-      <section id="how" class="three">
-        <article>
-          <div class="num">1</div>
-          <h3>The drone asks before every risky move</h3>
-          <p>Before taking off, dropping a parcel or landing, the drone asks a safety check. It may only go ahead on a fresh "Yes".</p>
-          <p class="techline">ML-DSA-87 signed, hash-chained records</p>
-        </article>
-        <article>
-          <div class="num">2</div>
-          <h3>Everything is locked in a black box</h3>
-          <p>Each part of the flight is sealed and stored on a blockchain. Only the investigator and the insurer can open it, and nobody can change it later.</p>
-          <p class="techline">ML-KEM-1024 sealing · QoreChain x/rdk rollup</p>
-        </article>
-        <article>
-          <div class="num">3</div>
-          <h3>Broken rule? The victim is paid</h3>
-          <p>An automatic checker reads the record against six safety rules. If one was broken, the victim is paid from the operator's deposit. No lawyers, no waiting.</p>
-          <p class="techline">Watchtower · fraud proofs · on-chain withdrawals</p>
-        </article>
-      </section>
-
-      <section class="rules block">
-        <div class="block-head"><div class="kicker">The six safety rules</div><h2>What counts as breaking the rules?</h2></div>
-        <div class="rule-grid" id="ruleGrid"></div>
-      </section>
-
-      <section id="flights" class="block">
-        <div class="block-head"><div class="kicker">Step 2 · Real flights</div><h2>Real flights, recorded on the blockchain</h2><p>These four flights were really flown and saved on QoreChain test network. A person filed a claim on each one. Press <b>Try to tamper</b> to see what happens when someone edits a record.</p></div>
-        <div id="flightList"></div>
-      </section>
-
-      <section id="proof" class="block proof-head">
-        <div class="block-head"><div class="kicker">For judges and developers</div><h2>Technical proof</h2><p>Everything below is read live from QoreChain. Open any section to check it yourself.</p></div>
-      </section>
-
-      <details id="settlement" class="block fold" open>
-        <summary><span class="kicker">Payments</span><span class="fold-t">Settlement batches and receipts</span></summary>
-        <p class="fold-p">The rollup groups posts into batches, and each batch is anchored on QoreChain. Press <b>Check</b> to verify a receipt against the chain.</p>
-        <div id="batches"></div>
-      </details>
-
-      <details id="fraud" class="block fold" open>
-        <summary><span class="kicker">Cheating caught</span><span class="fold-t">Fraud proofs upheld</span></summary>
-        <p class="fold-p">A batch that lies about who gets paid is rejected, and the cheater loses their deposit.</p>
-        <div id="fraudList"></div>
-      </details>
-
-      <details id="investigator" class="block fold dark">
-        <summary><span class="kicker">Needs a key</span><span class="fold-t">Open a sealed black box (investigator)</span></summary>
-        <p class="fold-p">With the investigator's key file, you can unseal a flight right here in your browser and replay it. Without the key, the record is unreadable.</p>
-        <div class="inv-form">
-          <label>Investigator key file<input type="file" id="invKey" accept=".json" /></label>
-          <label>Flight<select id="invFlight"></select></label>
-          <button class="btn lime" id="invOpen" disabled>Open the record</button>
-          <span class="hint">Make the demo key with <code>npm run investigator-key</code> in <code>rollup/</code>.</span>
-        </div>
-        <div id="invOut"></div>
-      </details>
-
-      <details class="block fold">
-        <summary><span class="kicker">Raw data</span><span class="fold-t">Every post in the rollup inbox</span></summary>
-        <div id="posts"></div>
-      </details>
-    </main>
+    <main id="app" tabindex="-1"></main>
 
     <footer class="foot">
-      <span>SkyProof · QoreChain Build Before Q-Day · Protocol Builders</span>
-      <span><a href="https://github.com/ponram06/skyproof-qorex">Source code</a> · <a href="https://build.qorechain.io/p/skyproof">Project page</a> · <span id="generated"></span></span>
+      <div class="wrap foot-in">
+        <span><b>SkyProof</b> · Built for QoreChain Build Before Q-Day</span>
+        <span class="foot-links"><a href="https://github.com/ponram06/skyproof-qorex">GitHub</a><a href="https://build.qorechain.io/p/skyproof">Project</a><span id="generated"></span></span>
+      </div>
     </footer>
     <script type="module" src="/src/main.ts"></script>
   </body>
