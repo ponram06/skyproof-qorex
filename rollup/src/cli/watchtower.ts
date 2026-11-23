@@ -23,6 +23,8 @@ interface TowerState {
   watch: WatchState;
   pending: { nonce: string; amount: string; recipient: string; reason: string; tx: string }[];
   log: { batch: number; valid: boolean; note: string }[];
+  /** Per processed batch: its published state root and the ledger/inbox position before it (to rewind). */
+  seen?: Record<number, { stateRoot: string; before: { ledger: SavedAccount[]; accFrom: string } }>;
 }
 
 async function once() {
@@ -38,8 +40,30 @@ async function once() {
   }
 
   const judge = await connect("judge");
+  st.seen ??= {};
+
+  // An upheld fraud rejects that batch and every later one. If a batch we already applied is now
+  // rejected or replaced, rewind to the state before it and re-read from there.
+  for (const i of Object.keys(st.seen).map(Number).sort((a, b) => a - b)) {
+    if (i >= st.next) continue;
+    const now = await rdk.rest.getBatch(ROLLUP_ID, i).catch(() => undefined);
+    if (now && now.status !== "rejected" && now.stateRoot === st.seen[i].stateRoot) continue;
+    console.log(`batch ${i} is now ${now?.status ?? "gone"}: rewinding to the state before it`);
+    st.ledger = st.seen[i].before.ledger;
+    st.accFrom = st.seen[i].before.accFrom;
+    for (const j of Object.keys(st.seen).map(Number)) if (j >= i) delete st.seen[j];
+    st.next = i;
+    break;
+  }
+
   for (; st.next <= latest; st.next++) {
     const b = await rdk.rest.getBatch(ROLLUP_ID, st.next);
+    if (b.status === "rejected") {
+      console.log(`batch ${b.batchIndex}: rejected by the chain (fraud upheld), skipped`);
+      st.log.push({ batch: b.batchIndex, valid: false, note: "rejected on chain" });
+      continue;
+    }
+    st.seen[st.next] = { stateRoot: b.stateRoot, before: { ledger: st.ledger, accFrom: st.accFrom } };
     const accFrom = unhex(st.accFrom);
     const entries = await fetchQledgerEntries(rdk.rest, { ...env, from: b.inboxStart, to: b.inboxEnd, accFrom });
     const parent = loadLedger(st.ledger);

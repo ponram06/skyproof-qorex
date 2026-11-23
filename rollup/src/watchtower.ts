@@ -25,7 +25,7 @@ export interface WatchState {
   /** body hash -> body post (hex) */
   bodies: Record<string, string>;
   claims: { flight: string; victim: string; note: string; status: "open" | "paid" | "rejected"; verdict?: Verdict }[];
-  exits: { operator: string; amount: string; status: "open" | "paid" }[];
+  exits: { operator: string; amount: string; status: "open" | "paid"; height?: number }[];
   rejectedPosts: string[];
 }
 export const emptyState = (): WatchState => ({ drones: {}, headers: {}, bodies: {}, claims: [], exits: [], rejectedPosts: [] });
@@ -65,7 +65,9 @@ export function readPosts(st: WatchState, entries: QledgerEntry[], creator: stri
       continue;
     }
     const exit = parseExit(p);
-    if (exit !== undefined && e.poster === creator) st.exits.push({ operator: e.poster, amount: exit.toString(), status: "open" });
+    // Keyed by inclusion height, so re-reading a batch after a rewind never doubles an exit.
+    if (exit !== undefined && e.poster === creator && !st.exits.some((x) => x.height === Number(e.height) && x.amount === exit.toString()))
+      st.exits.push({ operator: e.poster, amount: exit.toString(), status: "open", height: Number(e.height) });
   }
 }
 
