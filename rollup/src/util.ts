@@ -3,8 +3,15 @@ import { sha256 } from "@noble/hashes/sha2";
 export const enc = new TextEncoder();
 export const dec = new TextDecoder();
 
-export const hex = (b: Uint8Array): string => Buffer.from(b).toString("hex");
-export const unhex = (s: string): Uint8Array => new Uint8Array(Buffer.from(s.replace(/^0x/, ""), "hex"));
+// No Node Buffer here: these helpers also run in the browser (web/).
+export const hex = (b: Uint8Array): string => Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
+export const unhex = (s: string): Uint8Array => {
+  const h = s.replace(/^0x/, "");
+  if (h.length % 2 || /[^0-9a-f]/i.test(h)) throw new Error("not hex");
+  const out = new Uint8Array(h.length / 2);
+  for (let i = 0; i < out.length; i++) out[i] = parseInt(h.slice(2 * i, 2 * i + 2), 16);
+  return out;
+};
 
 export const concat = (...parts: Uint8Array[]): Uint8Array => {
   const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
