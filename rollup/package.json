@@ -7,9 +7,20 @@
   "scripts": {
     "preflight": "tsx src/preflight.ts",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test src/tests/*.test.ts"
+    "test": "node --import tsx --test src/tests/*.test.ts",
+    "setup": "tsx src/cli/setup.ts",
+    "create-rollup": "tsx src/cli/create-rollup.ts",
+    "deposit": "tsx src/cli/deposit.ts",
+    "fly": "tsx src/cli/fly.ts",
+    "claim": "tsx src/cli/claim.ts",
+    "batch": "tsx src/cli/submit-batch.ts",
+    "watch": "tsx src/cli/watchtower.ts",
+    "withdraw": "tsx src/cli/withdraw.ts",
+    "receipt": "tsx src/cli/receipt.ts",
+    "exit": "tsx src/cli/exit.ts"
   },
   "dependencies": {
+    "@cosmjs/stargate": "^0.39.0",
     "@noble/hashes": "^1.8.0",
     "@qorechain/rdk": "0.9.0",
     "@qorechain/sdk": "^0.14.0",
