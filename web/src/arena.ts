@@ -157,24 +157,24 @@ function quadcopter() {
 function caption(r: Rec, finding?: { rule: string; detail: string }): { title: string; body: string; tone: "ok" | "warn" | "bad" | "info" } | undefined {
   if (finding) {
     const titles: Record<string, string> = {
-      B1_GEOFENCE: "Rule B1 broken: geofence",
-      B2_ALTITUDE: "Rule B2 broken: altitude",
-      B3_UNAPPROVED_ACTION: "Rule B3 broken: no approval",
-      B4_OVERRIDE: "Rule B4 broken: override",
-      B5_RECORD_BROKEN: "Rule B5 broken: record",
-      B6_WIND: "Rule B6 broken: wind",
+      B1_GEOFENCE: "Rule broken: flew into a no-fly zone",
+      B2_ALTITUDE: "Rule broken: flew too high",
+      B3_UNAPPROVED_ACTION: "Rule broken: didn't ask permission",
+      B4_OVERRIDE: "Rule broken: ignored a \"No\"",
+      B5_RECORD_BROKEN: "Rule broken: record tampered with",
+      B6_WIND: "Rule broken: flew in unsafe wind",
     };
-    return { title: titles[finding.rule] ?? finding.rule, body: `${finding.detail}. The watchtower will pay the victim from the operator's bond.`, tone: "bad" };
+    return { title: titles[finding.rule] ?? finding.rule, body: `${finding.detail}. The victim will be paid from the operator's deposit.`, tone: "bad" };
   }
   if (r.k === "DECISION") {
-    if (r.act === "TAKEOFF") return r.ok ? { title: "Cleared for take-off", body: "The safety gate gave a fresh ALLOW for this exact request.", tone: "ok" } : { title: "Take-off denied", body: "Wind is over the permit's limit. The gate says DENY.", tone: "warn" };
-    if (r.act === "DROP") return r.ok ? { title: "Drop zone clear", body: "A fresh ALLOW for this drop. The parcel can go.", tone: "ok" } : { title: "Person at the drop pad", body: "Dropping now is unsafe. The gate says DENY; an honest drone holds and asks again.", tone: "warn" };
-    if (r.act === "LAND") return { title: r.ok ? "Cleared to land" : "Landing denied", body: "Back at home base.", tone: r.ok ? "ok" : "warn" };
+    if (r.act === "TAKEOFF") return r.ok ? { title: "Safe to take off", body: "The drone asked its safety check first, and got a \"Yes\".", tone: "ok" } : { title: "Too windy to take off", body: "The safety check says \"No\". A safe drone stays on the ground.", tone: "warn" };
+    if (r.act === "DROP") return r.ok ? { title: "Drop area is clear", body: "The safety check says \"Yes\". The parcel can be dropped.", tone: "ok" } : { title: "Someone is standing below", body: "Dropping now could hurt them. The safety check says \"No\", so a safe drone waits and asks again.", tone: "warn" };
+    if (r.act === "LAND") return { title: r.ok ? "Safe to land" : "Landing not allowed", body: "Back at home base.", tone: r.ok ? "ok" : "warn" };
   }
   if (r.k === "ACTION") {
-    if (r.act === "DROP") return { title: "Parcel released", body: "The drop is recorded, hash-chained and signed with ML-DSA-87.", tone: "info" };
-    if (r.act === "SAFE_STOP") return { title: "Link lost: safe stop", body: "No answer from the gate. The drone never invents an approval; it lands where it is.", tone: "warn" };
-    if (r.act === "TAKEOFF") return { title: "Take-off", body: "Every record from here is sealed with ML-KEM-1024 and posted to the rollup.", tone: "info" };
+    if (r.act === "DROP") return { title: "Parcel dropped", body: "This moment is saved in the drone's sealed black box.", tone: "info" };
+    if (r.act === "SAFE_STOP") return { title: "Signal lost: landing safely", body: "No answer from the safety check, so the drone does not guess. It lands where it is.", tone: "warn" };
+    if (r.act === "TAKEOFF") return { title: "Take-off", body: "From now on, everything the drone does is recorded and locked.", tone: "info" };
   }
   return undefined;
 }
@@ -183,15 +183,15 @@ export function mountArena(root: HTMLElement, recs: Rec[], permit: Permit, verdi
   root.innerHTML = `<div class="arena ${opts.compact ? "compact" : ""}">
       <div class="arena-view"></div>
       <div class="arena-caption"><div class="arena-cap-k">Ready</div><div class="arena-cap-t">Press play</div><div class="arena-cap-b"></div></div>
-      <div class="arena-hud"><span class="arena-clock">T+0 s</span><span class="arena-alt">ALT 0 m</span><span class="arena-wind">WIND 0 m/s</span></div>
+      <div class="arena-hud"><span class="arena-clock">Time 0 s</span><span class="arena-alt">Height 0 m</span><span class="arena-wind">Wind 0 m/s</span></div>
       <div class="arena-bar">
         <button class="arena-play">Pause</button>
         <input class="arena-time" type="range" min="0" max="1000" value="0" aria-label="Timeline" />
         <div class="arena-seg" role="group" aria-label="Speed">
-          <button data-speed="5">5×</button><button data-speed="12" class="on">12×</button><button data-speed="30">30×</button>
+          <button data-speed="5">Slow</button><button data-speed="12" class="on">Normal</button><button data-speed="30">Fast</button>
         </div>
         <div class="arena-seg" role="group" aria-label="Camera">
-          <button data-cam="follow" class="on">Follow</button><button data-cam="orbit">Orbit</button><button data-cam="top">Top</button>
+          <button data-cam="follow" class="on">Follow drone</button><button data-cam="orbit">Free look</button><button data-cam="top">From above</button>
         </div>
       </div>
     </div>`;
@@ -519,7 +519,7 @@ export function mountArena(root: HTMLElement, recs: Rec[], permit: Permit, verdi
     q<HTMLElement>(".arena-cap-t").textContent = title;
     q<HTMLElement>(".arena-cap-b").textContent = body;
   };
-  setCaption("T+0 s", "Delivery flight", `${recs.length} records, every one hash-chained. Watch the safety gate decide.`, "info");
+  setCaption("Start", "A parcel delivery", "Watch the drone ask its safety check before every risky move.", "info");
 
   function seek(t: number) {
     simT = t;
@@ -584,7 +584,7 @@ export function mountArena(root: HTMLElement, recs: Rec[], permit: Permit, verdi
       e.done = true;
       if (e.beacon) e.beacon.visible = true;
       if (e.bad) flash = 1;
-      if (e.cap) setCaption(`T+${Math.round((e.t - t0) / 1000)} s`, e.cap.title, e.cap.body, e.cap.tone);
+      if (e.cap) setCaption(`${Math.round((e.t - t0) / 1000)} s into the flight`, e.cap.title, e.cap.body, e.cap.tone);
     }
     flash = Math.max(0, flash - dt * 0.7);
     glow.intensity = flash * 60;
@@ -603,9 +603,9 @@ export function mountArena(root: HTMLElement, recs: Rec[], permit: Permit, verdi
       controls.target.lerp(drone.position, 0.12);
     }
     const tr = track[Math.min(i, track.length - 1)];
-    q<HTMLElement>(".arena-clock").textContent = `T+${Math.round((simT - t0) / 1000)} s`;
-    q<HTMLElement>(".arena-alt").textContent = `ALT ${Math.round(tr.alt)} m${tr.alt > permit.maxAltM ? " ▲ CEILING" : ""}`;
-    q<HTMLElement>(".arena-wind").textContent = `WIND ${tr.wind.toFixed(1)} m/s`;
+    q<HTMLElement>(".arena-clock").textContent = `Time ${Math.round((simT - t0) / 1000)} s`;
+    q<HTMLElement>(".arena-alt").textContent = `Height ${Math.round(tr.alt)} m${tr.alt > permit.maxAltM ? " ▲ too high" : ""}`;
+    q<HTMLElement>(".arena-wind").textContent = `Wind ${tr.wind.toFixed(1)} m/s`;
     if (document.activeElement !== slider) slider.value = String(Math.round(((simT - t0) / Math.max(1, t1 - t0)) * 1000));
     controls.update();
     renderer.render(scene, camera);

@@ -22,25 +22,43 @@ interface Data {
   watchtower?: { batch: number; valid: boolean; note: string }[];
 }
 
-const RULE_TEXT: Record<string, string> = {
-  B1_GEOFENCE: "left the permitted area or entered a no-fly zone",
-  B2_ALTITUDE: "flew above the altitude ceiling",
-  B3_UNAPPROVED_ACTION: "acted without a fresh, matching safety approval",
-  B4_OVERRIDE: "acted after the safety gate said DENY",
-  B5_RECORD_BROKEN: "record missing, edited, withheld or never closed",
-  B6_WIND: "took off in wind above the limit",
-};
 const ABOUT: Record<SimScenario, string> = {
-  normal: "A clean delivery. Every take-off, drop and landing has a fresh ALLOW.",
-  people_below: "A person stands at the drop pad. The gate says DENY, the drone holds and asks again, and drops when they walk away.",
-  link_lost: "The gate stops answering. The drone never invents an approval and lands where it is.",
-  cheating: "A person stays at the drop pad, and the operator drops the parcel anyway after the gate says DENY.",
-  unapproved: "The operator drops the parcel without asking the gate at all.",
+  normal: "A clean delivery. The drone asks before every take-off, drop and landing, and gets a “Yes” each time.",
+  people_below: "A person is standing where the parcel should land. The safety check says “No”, so the drone waits, asks again, and drops only once they walk away.",
+  link_lost: "The drone loses contact with its safety check. It does not guess; it lands safely where it is.",
+  cheating: "A person stays where the parcel should land. The safety check says “No”, but the operator drops the parcel anyway.",
+  unapproved: "The operator drops the parcel without asking the safety check at all.",
   shortcut: "The operator flies straight across the no-fly zone to save time.",
   altitude: "The operator cruises above the 120 m ceiling.",
-  wind: "A gusty day: the gate denies take-off, and the operator flies anyway.",
+  wind: "A gusty day: the safety check says “No” to take-off, and the operator flies anyway.",
 };
 const BREACHES: Partial<Record<SimScenario, string>> = { cheating: "B4", unapproved: "B3", shortcut: "B1", altitude: "B2", wind: "B6" };
+const LABEL: Record<SimScenario, string> = {
+  normal: "Normal delivery",
+  people_below: "Someone below",
+  link_lost: "Signal lost",
+  cheating: "Operator ignores \"No\"",
+  unapproved: "Never asked",
+  shortcut: "No-fly shortcut",
+  altitude: "Flying too high",
+  wind: "Too windy",
+};
+const RULES: [string, string, string][] = [
+  ["B1_GEOFENCE", "Stay in the allowed area", "Never leave the permitted area or enter a no-fly zone."],
+  ["B2_ALTITUDE", "Stay below the height limit", "Never fly above the 120 m ceiling."],
+  ["B3_UNAPPROVED_ACTION", "Ask before acting", "Take off, drop and land only after a fresh \"Yes\" from the safety check."],
+  ["B4_OVERRIDE", "Respect a \"No\"", "Never act after the safety check said \"No\"."],
+  ["B5_RECORD_BROKEN", "Keep the full record", "No missing, edited or hidden parts of the flight record."],
+  ["B6_WIND", "No flying in strong wind", "Never take off when the wind is above the limit."],
+];
+const PLAIN_RULE: Record<string, string> = Object.fromEntries(RULES.map(([k, t]) => [k, t]));
+const FLIGHT_NAME: Record<string, string> = {
+  override: "Operator overrode the safety check",
+  normal: "Normal delivery",
+  people_below: "Someone below: the drone waited",
+  cheating: "Someone below: operator dropped anyway",
+};
+const flightName = (id: string) => FLIGHT_NAME[Object.keys(FLIGHT_NAME).find((k) => id.includes(`-${k}-`)) ?? ""] ?? id;
 
 const client = createRdkClient({ network: "testnet", endpoints: { rest: `${location.origin}/api/rest`, rpc: `${location.origin}/api/rpc` } });
 const $ = (id: string) => document.getElementById(id)!;
@@ -55,7 +73,8 @@ async function main() {
   const data: Data = await fetch("/skyproof.json", { cache: "no-store" }).then((r) => r.json());
   $("generated").textContent = `data exported ${new Date(data.generatedAt).toLocaleDateString()}`;
   renderStatus(data);
-  renderStats(data);
+  renderFacts(data);
+  renderRules();
   renderFlights(data);
   renderBatches(data);
   renderFraud(data);
@@ -86,18 +105,23 @@ function renderStatus(d: Data) {
   $("status").innerHTML = rows.map(([k, v, ok]) => `<li><span>${esc(k)}</span><span class="dot ${ok ? "" : "wait"}">${esc(v)} ●</span></li>`).join("");
 }
 
-function renderStats(d: Data) {
+function paidTotal(d: Data) {
+  return d.batches.flatMap((b) => b.withdrawals).filter((w) => w.index !== undefined && d.withdrawalsExecuted?.[w.index]).reduce((s, w) => s + Number(w.amount), 0);
+}
+
+function renderFacts(d: Data) {
   const flights = new Set(d.headers.map((h) => parseHeaderPost(h.post).header.flight));
-  const records = d.headers.reduce((n, h) => n + parseHeaderPost(h.post).header.n, 0);
-  const paid = d.batches.flatMap((b) => b.withdrawals).filter((w) => w.index !== undefined && d.withdrawalsExecuted?.[w.index]).reduce((s, w) => s + Number(w.amount), 0);
-  const stats: [string, string, boolean?][] = [
-    [String(flights.size), "flights on chain"],
-    [records.toLocaleString(), "signed records"],
-    [String(d.posts.length), "inbox posts"],
-    [`${qor(paid)}`, "QOR paid to victims", true],
-    [String(d.fraud?.length ?? 0), "fraud proofs upheld"],
+  const facts: [string, string, string][] = [
+    [String(flights.size), "real flights recorded", "#flights"],
+    [`${qor(paidTotal(d))} QOR`, "paid to victims", "#settlement"],
+    [String(d.fraud?.length ?? 0), "cheating attempt caught and punished", "#fraud"],
+    [String(d.batches.length), "payment batches settled on chain", "#settlement"],
   ];
-  $("stats").innerHTML = stats.map(([v, k, lime]) => `<div class="stat ${lime ? "lime" : ""}"><b>${esc(v)}</b><span>${esc(k)}</span></div>`).join("");
+  $("facts").innerHTML = facts.map(([v, k, href]) => `<a class="fact" href="${href}"><b>${esc(v)}</b><span>${esc(k)}</span></a>`).join("");
+}
+
+function renderRules() {
+  $("ruleGrid").innerHTML = RULES.map(([, t, body], i) => `<div class="rule"><span class="rule-n">${i + 1}</span><div><b>${esc(t)}</b><p>${esc(body)}</p></div></div>`).join("");
 }
 
 /* ---------------- arena ---------------- */
@@ -105,7 +129,7 @@ function renderStats(d: Data) {
 let arena: ArenaHandle | undefined;
 function setupArena() {
   const chips = $("chips");
-  chips.innerHTML = SIM_SCENARIOS.map((s) => `<button class="chip" data-s="${s}">${s.replace("_", " ")}${BREACHES[s] ? ` <span class="b">${BREACHES[s]}</span>` : ""}</button>`).join("");
+  chips.innerHTML = SIM_SCENARIOS.map((s) => `<button class="chip ${BREACHES[s] ? "risky" : "safe"}" data-s="${s}"><span class="chip-dot"></span>${esc(LABEL[s])}</button>`).join("");
   const fly = (s: SimScenario) => {
     chips.querySelectorAll(".chip").forEach((c) => c.classList.toggle("on", (c as HTMLElement).dataset.s === s));
     const recs = simulate({ scenario: s, flight: `demo-${s}`, drone: "SKY-001", permit: DEMO_PERMIT, permitHash: "demo", seed: 7 + SIM_SCENARIOS.indexOf(s) });
@@ -115,18 +139,25 @@ function setupArena() {
     const rules = [...new Set(verdict.findings.map((f) => f.rule))];
     const dec = recs.filter((r) => r.k === "DECISION") as { ok: boolean }[];
     $("simVerdict").innerHTML = `
-      <div class="kicker">Scenario · ${esc(s.replace("_", " "))}</div>
+      <div class="kicker">What happens</div>
       <p class="vp-about">${esc(ABOUT[s])}</p>
-      <div class="kicker">Verdict of the six rules</div>
-      <div class="verdict-big ${verdict.breach ? "bad" : "ok"}">${verdict.breach ? `Breach: ${rules.map((r) => r.slice(0, 2)).join(" + ")}. The victim is paid.` : "No rule broken. The claim is rejected."}</div>
-      <ul class="findings">${verdict.findings.map((f) => `<li><b>${esc(ruleName(f.rule))}</b>${f.seq !== undefined ? ` · record #${f.seq}` : ""}<br>${esc(f.detail)}</li>`).join("")}</ul>
-      <div class="facts">
-        <div><b>${recs.length}</b><span>records</span></div>
-        <div><b>${dec.length}</b><span>gate decisions</span></div>
-        <div><b>${dec.filter((x) => !x.ok).length}</b><span>DENY</span></div>
-        <div><b>${Math.round((recs[recs.length - 1].t - recs[0].t) / 1000)} s</b><span>flight time</span></div>
+      <div class="result ${verdict.breach ? "bad" : "ok"}">
+        <div class="result-icon">${verdict.breach ? "✗" : "✓"}</div>
+        <div><b>${verdict.breach ? "A safety rule was broken" : "The drone stayed safe"}</b>
+        <span>${verdict.breach ? "The victim gets paid automatically." : "No rule broken, so no payout is needed."}</span></div>
       </div>
-      <p class="note">On QoreChain this record is sealed with ML-KEM-1024, signed with ML-DSA-87, settled in a batch and judged by the watchtower with exactly this code.</p>`;
+      ${rules.length ? `<ul class="broken">${rules.map((r) => `<li>${esc(PLAIN_RULE[r] ?? r)}: <b>broken</b></li>`).join("")}</ul>` : ""}
+      <details class="tech light">
+        <summary>Technical details</summary>
+        <ul class="findings">${verdict.findings.map((f) => `<li><b>${esc(ruleName(f.rule))}</b>${f.seq !== undefined ? ` · record #${f.seq}` : ""}<br>${esc(f.detail)}</li>`).join("")}</ul>
+        <div class="facts">
+          <div><b>${recs.length}</b><span>records</span></div>
+          <div><b>${dec.length}</b><span>safety checks</span></div>
+          <div><b>${dec.filter((x) => !x.ok).length}</b><span>answered "No"</span></div>
+          <div><b>${Math.round((recs[recs.length - 1].t - recs[0].t) / 1000)} s</b><span>flight time</span></div>
+        </div>
+        <p class="note">On QoreChain this record is sealed with ML-KEM-1024, signed with ML-DSA-87, settled in a rollup batch and judged by the watchtower with exactly this code.</p>
+      </details>`;
   };
   chips.querySelectorAll<HTMLButtonElement>(".chip").forEach((c) => (c.onclick = () => fly(c.dataset.s as SimScenario)));
   fly("people_below");
@@ -162,19 +193,21 @@ function renderFlights(d: Data) {
     });
     const claim = d.claims.find((c) => c.flight === flight);
     const rules = [...new Set(claim?.verdict?.findings.map((f) => f.rule) ?? [])];
-    const verdict = !claim
+    const outcome = !claim
       ? ""
       : claim.status === "paid"
-        ? `<div class="verdict paid"><b>Breach · victim paid 5 QOR.</b> ${rules.map((r) => `${ruleName(r)}: ${RULE_TEXT[r] ?? ""}`).join("; ")}</div>`
+        ? `<div class="outcome bad"><b>✗ Rule broken: victim paid 5 QOR</b><span>${rules.map((r) => esc(PLAIN_RULE[r] ?? r)).join(" · ")}</span></div>`
         : claim.status === "rejected"
-          ? `<div class="verdict rejected"><b>No rule broken · claim rejected.</b> The record is intact and every action had a fresh approval.</div>`
-          : `<div class="verdict open">Claim open: waiting for the record.</div>`;
+          ? `<div class="outcome ok"><b>✓ No rule broken: claim rejected</b><span>The drone asked first every time and the record is complete.</span></div>`
+          : `<div class="outcome open"><b>Claim open</b><span>Waiting for the record.</span></div>`;
     return `<article class="flight">
-      <div class="flight-head"><h3>${esc(flight)}</h3>
-        <div class="flight-tags">${tag(allOk, allOk ? `${segs.length} segments verified` : "problem")}<button class="btn" data-cheat="${esc(flight)}">Try to cheat</button></div>
+      <div class="flight-head">
+        <div><h3>${esc(flightName(flight))}</h3><div class="muted small">Claim filed: “${esc(claim?.note ?? "none")}”</div></div>
+        <div class="flight-tags">${tag(allOk, allOk ? "record intact" : "problem")}<button class="btn" data-cheat="${esc(flight)}">Try to tamper</button></div>
       </div>
-      <div class="segs">${segHtml.join("")}</div>
-      ${verdict}
+      ${outcome}
+      <p class="cheat-msg" data-msg="${esc(flight)}" hidden></p>
+      <details class="segs-wrap"><summary>Show the ${segs.length} signed pieces of this record</summary><div class="mono small">${esc(flight)}</div><div class="segs">${segHtml.join("")}</div></details>
     </article>`;
   });
   $("flightList").innerHTML = html.join("") || `<p class="muted">No flights yet.</p>`;
@@ -187,8 +220,14 @@ function renderFlights(d: Data) {
       const forged: SegmentHeader = { ...s.header, n: s.header.n - 1 };
       const ok = verifyHeader(forged, s.signature, d.drones[s.header.drone].publicKey);
       document.querySelector<HTMLElement>(`.seg[data-flight="${CSS.escape(flight)}"][data-i="0"] .sig`)!.innerHTML = tag(ok, ok ? "valid" : "invalid after edit");
-      btn.textContent = ok ? "Edit went unnoticed?!" : "Edited · signature broken";
+      btn.textContent = ok ? "Edit went unnoticed?!" : "Tampering caught";
       btn.disabled = true;
+      const msg = document.querySelector<HTMLElement>(`.cheat-msg[data-msg="${CSS.escape(flight)}"]`)!;
+      msg.hidden = false;
+      msg.className = `cheat-msg ${ok ? "bad" : "ok"}`;
+      msg.textContent = ok
+        ? "The edit was not detected."
+        : "We just deleted one moment from this record, in your browser. The drone's signature no longer matches, so the edit is caught instantly. That is why nobody can quietly change what happened.";
     }),
   );
 }
@@ -248,10 +287,10 @@ function renderBatches(d: Data) {
       <td>${b.inboxEnd - b.inboxStart} posts <span class="muted">(${b.inboxStart + 1}–${b.inboxEnd})</span></td>
       <td>${b.withdrawals.length ? b.withdrawals.map((w) => `${qor(w.amount)} QOR → <span class="mono">${short(w.recipient, 8)}</span> ${w.index !== undefined && d.withdrawalsExecuted?.[w.index] ? tag(true, "paid") : ""}`).join("<br>") : '<span class="muted">—</span>'}</td>
       <td class="bstatus" data-b="${b.index}">${b.status === "finalized" ? tag(true, "finalized") : tag("warn", b.status)}</td>
-      <td><button class="btn" data-receipt="${b.index}">Verify receipt</button><ul class="checks" id="r${b.index}"></ul></td>
+      <td><button class="btn" data-receipt="${b.index}">Check</button><ul class="checks" id="r${b.index}"></ul></td>
     </tr>`,
   );
-  $("batches").innerHTML = `<div class="scroll"><table class="table"><thead><tr><th>Batch</th><th>Inbox</th><th>Withdrawals</th><th>Status</th><th>Settlement receipt</th></tr></thead><tbody>${rows.join("")}</tbody></table></div>`;
+  $("batches").innerHTML = `<div class="scroll"><table class="table"><thead><tr><th>Batch</th><th>Inbox</th><th>Withdrawals</th><th>Status</th><th>Receipt</th></tr></thead><tbody>${rows.join("")}</tbody></table></div>`;
   $("batches").querySelectorAll<HTMLButtonElement>("button[data-receipt]").forEach((btn) =>
     btn.addEventListener("click", async () => {
       const i = Number(btn.dataset.receipt);
