@@ -87,7 +87,10 @@ npm run receipt -- <batch>        # verify the settlement receipt
 
 Website: `cd web && npm install && npm run dev` (data from `npm run export-web` in `rollup/`).
 
-Deploy the website: run `npx vercel` from the **repository root** (the page shares code with `rollup/`). `vercel.json` builds `web/` and serves the read-only QoreChain proxy in [`api/proxy.ts`](api/proxy.ts).
+Deploy the website, either way:
+
+- **Azure Static Web Apps.** Create a Static Web App (Free plan, deployment source "Other"). Copy its deployment token into the repository secret `AZURE_STATIC_WEB_APPS_API_TOKEN`. Every push to `main` then runs [`.github/workflows/azure-static-web-apps.yml`](.github/workflows/azure-static-web-apps.yml), which builds `web/` and deploys it with the read-only QoreChain proxy in [`azure/api/`](azure/api/index.js).
+- **Vercel.** Run `npx vercel` from the **repository root** (the page shares code with `rollup/`). `vercel.json` builds `web/` and serves the same proxy from [`api/proxy.ts`](api/proxy.ts).
 
 ## Credits
 
