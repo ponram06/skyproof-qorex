@@ -24,14 +24,14 @@ Every drone flight becomes data in an app-specific **QoreChain rollup** (x/rdk, 
 |---|---|
 | Design and requirement mapping | drafted |
 | `rollup/` preflight (live chain params, costs, keys) | working |
-| Rollup creation on qorechain-diana | not yet |
-| Sealed flight records (ML-KEM-1024) | not yet |
+| Rollup `skyproof-1` on qorechain-diana | live ([deployments](docs/DEPLOYMENTS.md)) |
+| Sealed flight records (ML-KEM-1024) | done, keys registered on chain |
 | Batch submitter with ML-DSA-87 anchors | not yet |
 | Watchtower + fraud proofs | not yet |
 | Withdrawals (payout, bond exit) | not yet |
 | Settlement receipts | not yet |
 | Website | not yet |
-| Threat model | not yet |
+| Threat model | [done](docs/THREAT_MODEL.md) |
 
 ## Run what exists
 

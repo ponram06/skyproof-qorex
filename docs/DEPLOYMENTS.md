@@ -24,3 +24,13 @@ Explorer: https://explore.qore.network · REST: https://api-testnet.qore.host
 | ML-KEM-1024 key, insurer | `737FC81BD915D1460FAFCA7A687E6AEEFE35AE3066F7D5C2A83A940E2A29977B` |
 
 Check a transaction: `curl -s https://api-testnet.qore.host/cosmos/tx/v1beta1/txs/<HASH>`
+
+## Rollup `skyproof-1`
+
+Optimistic settlement, `qledger-v1` execution, based sequencing, layer `skyproof-1`, challenge window 3,600 s.
+Read it: `curl -s https://api-testnet.qore.host/qorechain/rdk/v1/rollup/skyproof-1`
+
+| Step | Tx |
+|---|---|
+| Create rollup (10,000 QOR stake, layer registered) | `5DE80B58367A27C86139306F09D3414C482E9BF12DBB359EA3E389A4693FCC69` |
+| Bond the operator as batch submitter (1,000 QOR) | `FEEA80168A1FF204C61394E1D92E5E6B56FC7BB1C1309FB08366D0867D0707D8` |
