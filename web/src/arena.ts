@@ -179,7 +179,7 @@ function caption(r: Rec, finding?: { rule: string; detail: string }): { title: s
   return undefined;
 }
 
-export function mountArena(root: HTMLElement, recs: Rec[], permit: Permit, verdict: Verdict, opts: { autoplay?: boolean; compact?: boolean } = {}): ArenaHandle {
+export function mountArena(root: HTMLElement, recs: Rec[], permit: Permit, verdict: Verdict, opts: { autoplay?: boolean; compact?: boolean; onBreach?: () => void; onEnd?: () => void } = {}): ArenaHandle {
   root.innerHTML = `<div class="arena ${opts.compact ? "compact" : ""}">
       <div class="arena-view"></div>
       <div class="arena-caption"><div class="arena-cap-k">Ready</div><div class="arena-cap-t">Press play</div><div class="arena-cap-b"></div></div>
@@ -188,7 +188,7 @@ export function mountArena(root: HTMLElement, recs: Rec[], permit: Permit, verdi
         <button class="arena-play">Pause</button>
         <input class="arena-time" type="range" min="0" max="1000" value="0" aria-label="Timeline" />
         <div class="arena-seg" role="group" aria-label="Speed">
-          <button data-speed="5">Slow</button><button data-speed="12" class="on">Normal</button><button data-speed="30">Fast</button>
+          <button data-speed="8">Slow</button><button data-speed="20" class="on">Normal</button><button data-speed="45">Fast</button>
         </div>
         <div class="arena-seg" role="group" aria-label="Camera">
           <button data-cam="follow" class="on">Follow drone</button><button data-cam="orbit">Free look</button><button data-cam="top">From above</button>
@@ -488,7 +488,7 @@ export function mountArena(root: HTMLElement, recs: Rec[], permit: Permit, verdi
   // ---- controls -----------------------------------------------------------------------
   let simT = t0;
   let playing = opts.autoplay !== false;
-  let speed = 12;
+  let speed = 20;
   let flash = 0;
   const play = q<HTMLButtonElement>(".arena-play");
   const slider = q<HTMLInputElement>(".arena-time");
@@ -542,6 +542,7 @@ export function mountArena(root: HTMLElement, recs: Rec[], permit: Permit, verdi
     if (simT >= t1 && playing) {
       playing = false;
       play.textContent = "Replay";
+      opts.onEnd?.();
     }
     const { p, i } = at(simT);
     const flying = p.y > 0.3;
@@ -583,7 +584,10 @@ export function mountArena(root: HTMLElement, recs: Rec[], permit: Permit, verdi
       if (e.done || e.t > simT) continue;
       e.done = true;
       if (e.beacon) e.beacon.visible = true;
-      if (e.bad) flash = 1;
+      if (e.bad) {
+        flash = 1;
+        opts.onBreach?.();
+      }
       if (e.cap) setCaption(`${Math.round((e.t - t0) / 1000)} s into the flight`, e.cap.title, e.cap.body, e.cap.tone);
     }
     flash = Math.max(0, flash - dt * 0.7);

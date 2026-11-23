@@ -183,12 +183,22 @@ function homeReady() {
     $$<HTMLButtonElement>(".picker button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.s === s)));
     const recs = simulate({ scenario: s, flight: `demo-${s}`, drone: "SKY-001", permit: DEMO_PERMIT, permitHash: "demo", seed: 7 + SIM_SCENARIOS.indexOf(s) });
     const verdict = judge(recs, DEMO_PERMIT);
+    let shown = false;
+    const reveal = () => {
+      if (shown) return;
+      shown = true;
+      $("#result").className = `result ${verdict.breach ? "bad" : "ok"}`;
+      $("#result").innerHTML = `<span class="icon">${verdict.breach ? "✕" : "✓"}</span>
+        <div><b>${verdict.breach ? "Rule broken. The victim gets paid." : "Safe flight. No payout needed."}</b><span>${esc(SCENARIO[s].about)}</span></div>`;
+      $("#ruleList").innerHTML = ruleList(brokenRules(verdict));
+    };
+    $("#result").className = "result wait";
+    $("#result").innerHTML = `<span class="icon"><i class="spin"></i></span>
+      <div><b>Watching the flight…</b><span>${esc(SCENARIO[s].about)}</span></div><button class="btn sm" id="skip">Show result</button>`;
+    $("#skip").onclick = reveal;
+    $("#ruleList").innerHTML = ruleList([]).replace(/✓/g, "·");
     disposeArenas();
-    arenas.push(mountArena($("#simView"), recs as Rec[], DEMO_PERMIT, verdict, { autoplay: true }));
-    $("#result").className = `result ${verdict.breach ? "bad" : "ok"}`;
-    $("#result").innerHTML = `<span class="icon">${verdict.breach ? "✕" : "✓"}</span>
-      <div><b>${verdict.breach ? "Rule broken. The victim gets paid." : "Safe flight. No payout needed."}</b><span>${esc(SCENARIO[s].about)}</span></div>`;
-    $("#ruleList").innerHTML = ruleList(brokenRules(verdict));
+    arenas.push(mountArena($("#simView"), recs as Rec[], DEMO_PERMIT, verdict, { autoplay: true, onBreach: reveal, onEnd: reveal }));
   };
   $$<HTMLButtonElement>(".picker button").forEach((b) => (b.onclick = () => fly(b.dataset.s as SimScenario)));
   fly("people_below");
