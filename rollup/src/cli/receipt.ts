@@ -13,7 +13,8 @@ async function main() {
   const receipt = await buildSettlementReceipt(rdk, ROLLUP_ID, index);
   const v = await verifySettlementReceipt(receipt, { client: rdk });
   console.log(`batch ${index} receipt: ${v.valid ? "VALID" : "NOT VALID"} (${v.mode})`);
-  console.log(JSON.stringify(v, null, 2));
+  for (const [check, ok] of Object.entries(v.checks ?? {})) console.log(`  ${ok ? "✔" : "✖"} ${check}`);
+  console.log(`  anchored at main-chain height ${v.anchor?.mainChainHeight}, ${v.anchor?.transactionCount} txs, signed by ${receipt.creator} (${receipt.algorithm})`);
   mkdirSync("receipts", { recursive: true });
   writeFileSync(`receipts/${ROLLUP_ID}-batch-${index}.json`, JSON.stringify({ receipt, verification: v }, null, 2));
   if (!v.valid) process.exit(2);

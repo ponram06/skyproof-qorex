@@ -49,3 +49,7 @@ Read it: `curl -s https://api-testnet.qore.host/qorechain/rdk/v1/rollup/skyproof
 | **Batch 0**: 16 inbox entries, anchored under ML-DSA-87 | `23878762E5A651075DF6A898F4FCD187F252ED55A08846ACB78C94D6F9425BF8` |
 | Watchtower: batch 0 roots match; override flight judged **B4_OVERRIDE**, payout of 5 QOR posted (pool-signed qledger withdrawal) | `B2889F2668ED25222D69899097AE15245E7DB60C39464B2251718218EB8F9637` |
 | Watchtower: normal flight judged clean, claim **rejected** | — |
+
+## Settlement receipt, batch 0
+
+`npm run receipt -- 0` → **VALID (chain mode)**: layer binding, batch state root, anchor on chain, creator authority, ML-DSA-87 signature, chain binding. Anchored at main-chain height 10,600,497. Full receipt: [`rollup/receipts/skyproof-1-batch-0.json`](../rollup/receipts/skyproof-1-batch-0.json).
