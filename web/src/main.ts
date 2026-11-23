@@ -2,6 +2,10 @@ import "./polyfill";
 import { buildSettlementReceipt, createRdkClient, verifySettlementReceipt } from "@qorechain/rdk";
 import { parseHeaderPost, verifyHeader, type SegmentHeader } from "./verify";
 import { drawFlight, openFlight, type InvestigatorData } from "./investigator";
+import { mountReplay, type ReplayHandle, type Rec } from "./replay3d";
+import { simulate, SIM_SCENARIOS, type SimScenario } from "../../rollup/src/sim/sim";
+import { DEMO_PERMIT } from "../../rollup/src/flight/scenarios";
+import { judge } from "../../rollup/src/rules";
 
 interface Data {
   generatedAt: string;
@@ -35,6 +39,7 @@ const tag = (ok: boolean | "warn", text: string) => `<span class="tag ${ok === "
 async function main() {
   const data: Data = await fetch("/skyproof.json", { cache: "no-store" }).then((r) => r.json());
   $("generated").textContent = `data exported ${new Date(data.generatedAt).toLocaleString()}`;
+  setupSimulator();
   renderRollup(data);
   renderFlights(data);
   renderBatches(data);
@@ -148,6 +153,43 @@ function renderBatches(d: Data) {
   );
 }
 
+const ABOUT: Record<SimScenario, string> = {
+  normal: "A clean delivery: every action has a fresh ALLOW. Expected: no rule broken.",
+  people_below: "A person stands at the drop pad. The gate says DENY; the drone hovers and asks again, then drops on a fresh ALLOW. Expected: no rule broken.",
+  link_lost: "The gate stops answering. The drone never invents an approval and does a safe stop. Expected: no rule broken.",
+  cheating: "A person stays at the drop pad; the operator drops anyway after the DENY. Expected: B4 override.",
+  unapproved: "The operator drops without asking the gate at all. Expected: B3 unapproved action.",
+  shortcut: "The operator flies straight across the no-fly zone. Expected: B1 geofence.",
+  altitude: "The operator cruises above the 120 m ceiling. Expected: B2 altitude.",
+  wind: "Gusty day: the gate denies take-off; the operator flies anyway. Expected: B6 wind and B4 override.",
+};
+let replay: ReplayHandle | undefined;
+const showReplay = (el: HTMLElement, recs: Rec[], permit: typeof DEMO_PERMIT, verdict: ReturnType<typeof judge>) => {
+  replay?.dispose();
+  replay = mountReplay(el, recs, permit, verdict);
+};
+
+function setupSimulator() {
+  const sel = $("simScenario") as HTMLSelectElement;
+  sel.innerHTML = SIM_SCENARIOS.map((s) => `<option value="${s}">${s.replace("_", " ")}</option>`).join("");
+  const about = () => ($("simAbout").textContent = ABOUT[sel.value as SimScenario]);
+  sel.onchange = about;
+  about();
+  ($("simFly") as HTMLButtonElement).onclick = () => {
+    const scenario = sel.value as SimScenario;
+    const recs = simulate({ scenario, flight: `demo-${scenario}`, drone: "SKY-001", permit: DEMO_PERMIT, permitHash: "demo", seed: Math.floor(Math.random() * 1e5) });
+    const verdict = judge(recs, DEMO_PERMIT);
+    const rules = [...new Set(verdict.findings.map((f) => f.rule))];
+    $("simOut").innerHTML = `<div class="replay"><div id="simView"></div><div class="card">
+        <div class="k">${recs.length} records · ${recs.filter((r) => r.k === "DECISION").length} gate decisions</div>
+        <p><b>Verdict:</b> ${verdict.breach ? tag(false, rules.join(", ")) : tag(true, "no rule broken")}</p>
+        <ul class="findings">${verdict.findings.map((f) => `<li><b>${esc(f.rule.replace("_", " "))}</b>${f.seq !== undefined ? ` (record #${f.seq})` : ""}: ${esc(f.detail)}</li>`).join("")}</ul>
+        <p class="muted small">On QoreChain, this record would be sealed with ML-KEM-1024, signed by the drone with ML-DSA-87, settled in a batch and judged by the watchtower exactly like this.</p>
+      </div></div>`;
+    showReplay($("simView"), recs as Rec[], DEMO_PERMIT, verdict);
+  };
+}
+
 function setupInvestigator(d: Data) {
   const flights = [...new Set(d.headers.map((h) => parseHeaderPost(h.post).header.flight))];
   const sel = $("invFlight") as HTMLSelectElement;
@@ -173,7 +215,7 @@ function setupInvestigator(d: Data) {
       const decisions = r.recs.filter((x) => x.k === "DECISION");
       const actions = r.recs.filter((x) => x.k === "ACTION");
       $("invOut").innerHTML = `<div class="replay">
-        <div>${r.permit ? drawFlight(r.recs, r.permit, r.verdict) : ""}</div>
+        <div id="invView"></div>
         <div class="card">
           <div class="k">Opened ${r.segments} sealed segments · ${r.recs.length} records</div>
           <p>${r.errors.length ? tag(false, "record problems") : tag(true, "every segment matches its drone-signed header")}</p>
@@ -181,9 +223,11 @@ function setupInvestigator(d: Data) {
           <p><b>Actions:</b> ${actions.map((x) => x.act).join(" · ")}</p>
           <p><b>Verdict:</b> ${r.verdict.breach ? tag(false, "rule broken") : tag(true, "no rule broken")}</p>
           <ul class="findings">${rules.map((f) => `<li><b>${esc(f.rule.replace("_", " "))}</b> ${f.seq !== undefined ? `(record #${f.seq})` : ""}: ${esc(f.detail)}</li>`).join("")}</ul>
-          <p class="muted small">Map: dashed green = permitted area, red = no-fly zone, purple = path, dots = actions (green), DENY decisions (orange), breaches (red).</p>
+          <p class="muted small">Top-down map: dashed green = permitted area, red = no-fly zone, purple = path, dots = actions (green), DENY decisions (orange), breaches (red).</p>
+          <div class="map small">${r.permit ? drawFlight(r.recs, r.permit, r.verdict) : ""}</div>
         </div>
       </div>`;
+      if (r.permit) showReplay($("invView"), r.recs as Rec[], r.permit, r.verdict);
     } catch (err) {
       $("invOut").innerHTML = `<p class="verdict paid">Could not open: ${esc(err instanceof Error ? err.message : String(err))}</p>`;
     }

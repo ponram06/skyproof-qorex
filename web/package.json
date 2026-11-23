@@ -13,9 +13,11 @@
     "@noble/hashes": "^1.8.0",
     "@qorechain/rdk": "0.9.0",
     "@qorechain/sdk": "^0.14.0",
-    "buffer": "^6.0.3"
+    "buffer": "^6.0.3",
+    "three": "^0.170.0"
   },
   "devDependencies": {
+    "@types/three": "^0.170.0",
     "typescript": "^5.7.2",
     "vite": "^6.0.7"
   }

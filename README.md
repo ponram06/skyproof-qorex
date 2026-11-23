@@ -55,7 +55,7 @@ flowchart LR
 | Folder | What |
 |---|---|
 | [`rollup/`](rollup) | TypeScript: records, sealing, rules, ledger, watchtower, CLI for every step |
-| [`web/`](web) | Website: in-browser ML-DSA-87 checks, live receipt verification, tamper demo |
+| [`web/`](web) | Website: fly any scenario in the browser with a 3D replay, in-browser ML-DSA-87 checks, live receipt verification, tamper demo, investigator view (ML-KEM decryption + 3D replay of on-chain flights), upheld fraud proofs |
 | [`docs/`](docs) | [Design](docs/DESIGN.md), [threat model](docs/THREAT_MODEL.md), [deployments](docs/DEPLOYMENTS.md) |
 
 ## Run it

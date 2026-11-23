@@ -102,3 +102,20 @@ footer { padding: 24px 16px 48px; }
 .map .nofly { fill: color-mix(in srgb, var(--bad) 16%, transparent); stroke: var(--bad); }
 .map .path { fill: none; stroke: var(--accent); stroke-width: 2.5; }
 .findings { margin: 0; padding-left: 18px; }
+
+.r3d { display: grid; gap: 8px; }
+.r3d-view { width: 100%; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); background: var(--panel); }
+.r3d-view canvas { display: block; width: 100% !important; }
+.r3d-hud { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; color: var(--muted); }
+.r3d-hud b { color: var(--ink); }
+.r3d-event { color: var(--ink); }
+.r3d-bar { display: flex; gap: 8px; align-items: center; }
+.r3d-bar input[type=range] { flex: 1; accent-color: var(--accent); }
+.r3d-bar select { font: inherit; font-size: 13px; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 5px 6px; }
+.r3d-log { list-style: none; margin: 0; padding: 0; max-height: 170px; overflow: auto; font-size: 13px; }
+.r3d-log li { padding: 3px 0; border-bottom: 1px solid var(--line); }
+.r3d-log li.bad { color: var(--bad); font-weight: 600; }
+.r3d-log li.warn { color: var(--warn); }
+.r3d-log li.ok { color: var(--ok); }
+.map.small { max-width: 320px; }
+.r3d-follow { font-size: 13px; color: var(--muted); display: flex; gap: 4px; align-items: center; white-space: nowrap; }
