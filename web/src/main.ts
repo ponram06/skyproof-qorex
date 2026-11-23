@@ -247,7 +247,7 @@ function renderBatches(d: Data) {
       <td><b>#${b.index}</b></td>
       <td>${b.inboxEnd - b.inboxStart} posts <span class="muted">(${b.inboxStart + 1}–${b.inboxEnd})</span></td>
       <td>${b.withdrawals.length ? b.withdrawals.map((w) => `${qor(w.amount)} QOR → <span class="mono">${short(w.recipient, 8)}</span> ${w.index !== undefined && d.withdrawalsExecuted?.[w.index] ? tag(true, "paid") : ""}`).join("<br>") : '<span class="muted">—</span>'}</td>
-      <td class="status" data-b="${b.index}">${b.status === "finalized" ? tag(true, "finalized") : tag("warn", b.status)}</td>
+      <td class="bstatus" data-b="${b.index}">${b.status === "finalized" ? tag(true, "finalized") : tag("warn", b.status)}</td>
       <td><button class="btn" data-receipt="${b.index}">Verify receipt</button><ul class="checks" id="r${b.index}"></ul></td>
     </tr>`,
   );
@@ -293,7 +293,7 @@ async function live(d: Data) {
     $("live").textContent = `● live · batch #${latest.batchIndex} · h ${tip.height.toLocaleString()}`;
     const win = r.challengeWindowSec ?? 3600;
     for (const b of d.batches) {
-      const cell = document.querySelector<HTMLElement>(`.status[data-b="${b.index}"]`);
+      const cell = document.querySelector<HTMLElement>(`.bstatus[data-b="${b.index}"]`);
       if (!cell) continue;
       const view = await client.rest.getBatch(d.rollup.rollupId, b.index);
       const left = view.submittedTime + win - tip.timeSecs;
