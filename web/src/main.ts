@@ -213,7 +213,7 @@ function flightsPage() {
         .map((f) => {
           const o = outcome(f.claim);
           const broken = brokenRules(f.claim?.verdict);
-          return `<details class="card row-card">
+          return `<details class="card row-card" data-flight="${esc(f.id)}">
           <summary>
             <div class="grow"><b>${esc(f.name)}</b><span class="muted">${f.records} records · ${f.segs.length} signed parts</span></div>
             <div class="badges">${badge(f.intact ? "ok" : "bad", f.intact ? "Record intact" : "Record broken")}${badge(o.tone, o.label)}</div>
@@ -246,6 +246,12 @@ function flightsPage() {
 }
 
 function flightsReady() {
+  const want = decodeURIComponent(location.hash.split("/")[2] ?? "");
+  const target = want ? $$<HTMLDetailsElement>("details[data-flight]").find((d) => d.dataset.flight === want) : undefined;
+  if (target) {
+    target.open = true;
+    requestAnimationFrame(() => target.scrollIntoView({ block: "start" }));
+  }
   $$<HTMLButtonElement>("[data-tamper]").forEach((btn) =>
     btn.addEventListener("click", () => {
       const f = flights.find((x) => x.id === btn.dataset.tamper)!;
@@ -267,15 +273,20 @@ function claimsPage() {
     const f = flights.find((x) => x.id === c.flight);
     const broken = brokenRules(c.verdict);
     const tone = c.status === "paid" ? "bad" : c.status === "rejected" ? "ok" : "warn";
-    return `<tr>
+    return `<tr data-victim="${esc(c.victim)}">
       <td><b>“${esc(c.note)}”</b><span class="muted block">by ${esc(short(c.victim))}</span></td>
-      <td>${esc(f?.name ?? c.flight)}</td>
+      <td><a class="link" href="#/flights/${encodeURIComponent(c.flight)}">${esc(f?.name ?? c.flight)}</a></td>
       <td>${badge(tone, c.status === "paid" ? "Paid 5 QOR" : c.status === "rejected" ? "Rejected" : "Open")}${broken.length ? `<span class="muted block">${broken.map((r) => esc(RULE[r] ?? r)).join(", ")}</span>` : ""}</td>
     </tr>`;
   });
   return `
   <section class="wrap page">
     <div class="head"><h1>Claims</h1><p>Someone files a claim. The watchtower opens the sealed record and checks six rules. If one was broken, the payout is automatic.</p></div>
+    <form class="card lookup" id="lookup">
+      <label for="addr"><b>Check my claim</b><span class="muted">Enter your QoreChain address (qor1…)</span></label>
+      <div class="lookup-row"><input id="addr" placeholder="qor1…" autocomplete="off" spellcheck="false" /><button class="btn primary">Check</button></div>
+      <div id="lookupOut" aria-live="polite"></div>
+    </form>
     <div class="card flush"><div class="scroll"><table class="table">
       <thead><tr><th>Claim</th><th>Flight</th><th>Decision</th></tr></thead>
       <tbody>${rows.join("")}</tbody>
@@ -283,6 +294,33 @@ function claimsPage() {
     <h2 class="sub-h">The six rules</h2>
     <div class="rule-grid">${RULES.map(([, t], i) => `<div class="card rule"><span class="n">${i + 1}</span>${esc(t)}</div>`).join("")}</div>
   </section>`;
+}
+
+function claimsReady() {
+  $("#lookup").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const addr = $<HTMLInputElement>("#addr").value.trim().toLowerCase();
+    const out = $("#lookupOut");
+    $$("tr[data-victim]").forEach((tr) => tr.classList.remove("hit"));
+    if (!/^qor1[02-9ac-hj-np-z]{20,90}$/.test(addr)) {
+      out.innerHTML = `<p class="alert">That doesn't look like a QoreChain address. It starts with <b>qor1</b>.</p>`;
+      return;
+    }
+    const mine = data.claims.filter((c) => c.victim === addr);
+    $$(`tr[data-victim="${CSS.escape(addr)}"]`).forEach((tr) => tr.classList.add("hit"));
+    const paid = mine.filter((c) => c.status === "paid").length;
+    let balance = "";
+    try {
+      const r = await fetch(`/api/rest/cosmos/bank/v1beta1/balances/${addr}`).then((x) => x.json());
+      const q = (r.balances ?? []).find((b: { denom: string }) => b.denom === "uqor");
+      balance = ` Your balance on QoreChain right now: <b>${qor(q?.amount ?? 0)} QOR</b>.`;
+    } catch {
+      /* the balance is a nice-to-have */
+    }
+    out.innerHTML = mine.length
+      ? `<p class="found ok">${mine.length} claim${mine.length > 1 ? "s" : ""} found: <b>${paid} paid</b>, ${mine.length - paid} rejected. They are highlighted below.${balance}</p>`
+      : `<p class="found">No claims for this address yet.${balance}</p>`;
+  });
 }
 
 function proofPage() {
@@ -407,7 +445,7 @@ function investigateReady() {
 const pages: Record<string, [() => string, (() => void)?]> = {
   "": [home, homeReady],
   flights: [flightsPage, flightsReady],
-  claims: [claimsPage],
+  claims: [claimsPage, claimsReady],
   proof: [proofPage, proofReady],
   investigate: [investigatePage, investigateReady],
 };
@@ -422,7 +460,7 @@ function route() {
   $$(".links a").forEach((a) => a.classList.toggle("on", a.dataset.r === page));
   document.body.classList.remove("menu-open");
   $("#menu").setAttribute("aria-expanded", "false");
-  window.scrollTo(0, 0);
+  if (!location.hash.split("/")[2]) window.scrollTo(0, 0);
   refreshBatchCells().catch(() => undefined);
 }
 
@@ -456,7 +494,15 @@ async function live() {
 }
 
 async function main() {
-  data = await fetch("/skyproof.json", { cache: "no-store" }).then((r) => r.json());
+  $("#app").innerHTML = `<div class="wrap loading"><i class="spin"></i>Loading flights…</div>`;
+  try {
+    const res = await fetch("/skyproof.json", { cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    data = await res.json();
+  } catch (e) {
+    $("#app").innerHTML = `<div class="wrap loading"><p class="alert">Couldn't load the flight data (${esc(e instanceof Error ? e.message : String(e))}). Please refresh.</p></div>`;
+    return;
+  }
   flights = buildFlights(data);
   $("#generated").textContent = `Data from ${new Date(data.generatedAt).toLocaleDateString()}`;
   $("#menu").addEventListener("click", () => {
