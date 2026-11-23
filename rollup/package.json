@@ -6,9 +6,11 @@
   "license": "Apache-2.0",
   "scripts": {
     "preflight": "tsx src/preflight.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test src/tests/*.test.ts"
   },
   "dependencies": {
+    "@noble/hashes": "^1.8.0",
     "@qorechain/rdk": "0.9.0",
     "@qorechain/sdk": "^0.14.0",
     "dotenv": "^16.4.5"
