@@ -64,3 +64,12 @@ Read it: `curl -s https://api-testnet.qore.host/qorechain/rdk/v1/rollup/skyproof
 | Watchtower: people_below judged clean, claim **rejected**; cheating judged **B4_OVERRIDE**, 5 QOR payout posted | `91F30004C96865B2CED39620062C7DBF8634F6F645363F3248D43F1E4EC9AC31` |
 
 Cost of the two flights with their 36 posts: about 4.2 test QOR in fees.
+
+## Withdrawals executed on QoreChain
+
+| Step | Tx |
+|---|---|
+| **Batch 1** (the override flight's payout as a qledger WITHDRAW), anchored under ML-DSA-87 | `0386DE01FBA814443B7B62FCDA002829B039E2EC5B9B143B63F1A13126BB6949` |
+| Batch 1 finalized after the 3,600 s challenge window, no challenge | — |
+| **`MsgExecuteWithdrawal`**: 5 QOR from the rollup escrow to the victim (event `rdk_withdrawal_executed`, batch 1, withdrawal 0) | `2C6A0DDBC423727AEA71D1315E99D01CB7CABD1D46674119CDC0F80856767FB2` |
+| **Batch 3** (the cheating flight's payout) | `1C060C7E2040357CD48264FE984E570E1595C6221B0F881BFE8C1DF0D522792E` |
