@@ -1,5 +1,5 @@
 {
- "generatedAt": "2026-11-23T08:32:12.535Z",
+ "generatedAt": "2026-11-23T13:06:32.705Z",
  "chainId": "qorechain-diana",
  "rollup": {
   "rollupId": "skyproof-1",
@@ -120,14 +120,14 @@
   },
   {
    "index": 4,
-   "status": "submitted",
+   "status": "finalized",
    "inboxStart": 54,
    "inboxEnd": 55,
    "txCount": 1,
    "stateRoot": "28b2ac71503a5ede274b1f908f772979e9fca2d2a6b77b52b768438385bedcde",
    "withdrawalsRoot": "",
    "submittedTime": 1795422482,
-   "finalizedAt": 0,
+   "finalizedAt": 10606643,
    "tx": "B6AE82B277B6037DFE84791CDE7C416455F1F1E9F87CEBF69DDE739C02D4A369",
    "withdrawals": []
   }
