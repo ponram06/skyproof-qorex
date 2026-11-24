@@ -252,3 +252,24 @@ tr.hit td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
 .loading { display: flex; align-items: center; gap: 12px; padding-top: 120px; padding-bottom: 120px; justify-content: center; color: var(--muted); }
 :focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 .row-card { scroll-margin-top: 84px; }
+
+/* ---------- file a claim ---------- */
+.file { padding: 20px; margin-bottom: 16px; display: grid; gap: 14px; scroll-margin-top: 84px; }
+.file-head h2 { font-size: 22px; font-weight: 800; }
+.file-head span { display: block; font-size: 14px; margin-top: 4px; }
+.file-steps { margin: 0; padding-left: 22px; display: grid; gap: 6px; color: var(--ink-2); }
+.file-steps li::marker { font-weight: 700; color: var(--ink); }
+.file-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.file-restore { display: grid; gap: 8px; max-width: 560px; }
+.file textarea, .file select { font: 15px var(--sans); padding: 10px 12px; border: 1px solid var(--line-2); border-radius: 10px; background: var(--bg); width: 100%; resize: vertical; }
+.wallet { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 14px; background: #f5f4f0; border-radius: 11px; }
+.wallet .grow b { font-size: 13.5px; font-weight: 500; }
+.fund { padding: 12px 14px; border-radius: 11px; background: var(--warn-bg); color: #6b3f00; font-size: 14.5px; }
+.claim-form { display: grid; gap: 12px; }
+.claim-form label { display: grid; gap: 6px; font-size: 14px; font-weight: 600; }
+.wallet-more > summary { cursor: pointer; font-size: 14px; font-weight: 600; color: var(--ink-2); }
+.wallet-more[open] { display: grid; gap: 10px; }
+.words { padding: 12px; border-radius: 10px; background: #f5f4f0; line-height: 1.7; }
+.spin.inline { display: inline-block; vertical-align: -3px; margin-right: 8px; }
+.next { margin-top: 8px; }
+.result .block { margin-top: 4px; }

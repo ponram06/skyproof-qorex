@@ -6,6 +6,7 @@ import { mountArena, type ArenaHandle, type Rec } from "./arena";
 import { simulate, SIM_SCENARIOS, type SimScenario } from "../../rollup/src/sim/sim";
 import { DEMO_PERMIT } from "../../rollup/src/flight/scenarios";
 import { judge, type Verdict } from "../../rollup/src/rules";
+import { balanceUqor, CLAIM_FEE_QOR, createWallet, fileClaim, forgetWallet, loadWallet, restoreWallet, type ClaimWallet } from "./wallet";
 
 /* ================= data ================= */
 
@@ -224,6 +225,7 @@ function flightsPage() {
               <div><span>Claim</span><b>“${esc(f.claim?.note ?? "None")}”</b></div>
               <div><span>Decision</span><b>${broken.length ? `Broke: ${broken.map((r) => esc(RULE[r] ?? r)).join(", ")}` : f.claim ? "No rule broken" : "—"}</b></div>
             </div>
+            <div><a class="btn sm" href="#/claims/${encodeURIComponent(f.id)}">Hurt by this flight? File a claim</a></div>
             <div class="tamper">
               <button class="btn" data-tamper="${esc(f.id)}">Try to edit this record</button>
               <span class="msg muted">Removes one moment from the record in your browser, then re-checks the drone's signature.</span>
@@ -281,7 +283,11 @@ function claimsPage() {
   });
   return `
   <section class="wrap page">
-    <div class="head"><h1>Claims</h1><p>Someone files a claim. The watchtower opens the sealed record and checks six rules. If one was broken, the payout is automatic.</p></div>
+    <div class="head"><h1>Claims</h1><p>Hurt by a drone? File a claim. The watchtower opens the sealed record and checks six rules. If one was broken, you are paid automatically.</p></div>
+    <section class="card file" id="file" aria-labelledby="fileTitle">
+      <div class="file-head"><h2 id="fileTitle">File a claim</h2><span class="muted">Signed with a quantum-safe key (ML-DSA-87), straight from this page.</span></div>
+      <div id="fileBox"></div>
+    </section>
     <form class="card lookup" id="lookup">
       <label for="addr"><b>Check my claim</b><span class="muted">Enter your QoreChain address (qor1…)</span></label>
       <div class="lookup-row"><input id="addr" placeholder="qor1…" autocomplete="off" spellcheck="false" /><button class="btn primary">Check</button></div>
@@ -296,7 +302,12 @@ function claimsPage() {
   </section>`;
 }
 
+let walletPoll: ReturnType<typeof setInterval> | undefined;
+
 function claimsReady() {
+  const want = decodeURIComponent(location.hash.split("/")[2] ?? "");
+  renderFileBox(loadWallet(), flights.some((f) => f.id === want) ? want : undefined);
+  if (want) requestAnimationFrame(() => $("#file").scrollIntoView({ block: "start" }));
   $("#lookup").addEventListener("submit", async (e) => {
     e.preventDefault();
     const addr = $<HTMLInputElement>("#addr").value.trim().toLowerCase();
@@ -319,7 +330,129 @@ function claimsReady() {
     }
     out.innerHTML = mine.length
       ? `<p class="found ok">${mine.length} claim${mine.length > 1 ? "s" : ""} found: <b>${paid} paid</b>, ${mine.length - paid} rejected. They are highlighted below.${balance}</p>`
-      : `<p class="found">No claims for this address yet.${balance}</p>`;
+      : `<p class="found">No judged claims for this address yet. A new claim shows here after the watchtower's next check.${balance}</p>`;
+  });
+}
+
+/* ---------- file a claim (wallet.ts) ---------- */
+
+function renderFileBox(w: ClaimWallet | undefined, flight?: string) {
+  clearInterval(walletPoll);
+  const box = $("#fileBox");
+  if (!w) {
+    box.innerHTML = `
+      <ol class="file-steps">
+        <li class="on"><b>Get a claim wallet.</b> It's created in this browser and is where your payout goes.</li>
+        <li><b>Add a little test QOR</b> (${CLAIM_FEE_QOR} QOR) for the network fee.</li>
+        <li><b>Pick the flight and say what happened.</b></li>
+      </ol>
+      <div class="file-actions"><button class="btn primary" id="wNew">Create my claim wallet</button><button class="btn" id="wHave">I have a recovery phrase</button></div>
+      <form id="wRestore" class="file-restore" hidden>
+        <label for="wWords" class="muted">Your 24 recovery words</label>
+        <textarea id="wWords" rows="2" autocomplete="off" spellcheck="false"></textarea>
+        <button class="btn">Restore</button>
+      </form>
+      <div id="fileOut" aria-live="polite"></div>`;
+    $("#wNew").onclick = async () => {
+      $<HTMLButtonElement>("#wNew").disabled = true;
+      renderFileBox(await createWallet(), flight);
+    };
+    $("#wHave").onclick = () => ($("#wRestore").hidden = false);
+    $("#wRestore").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      try {
+        renderFileBox(await restoreWallet($<HTMLTextAreaElement>("#wWords").value), flight);
+      } catch (err) {
+        $("#fileOut").innerHTML = `<p class="alert">${esc(err instanceof Error ? err.message : String(err))}</p>`;
+      }
+    });
+    return;
+  }
+  const options = flights.map((f) => `<option value="${esc(f.id)}"${f.id === flight ? " selected" : ""}>${esc(f.name)}</option>`).join("");
+  box.innerHTML = `
+    <div class="wallet">
+      <div class="grow"><span class="muted tiny">Your claim wallet (payouts go here)</span><b class="mono" id="wAddr">${esc(w.address)}</b></div>
+      <button class="btn sm" id="wCopy">Copy</button>
+      <span class="badge plain" id="wBal">Checking…</span>
+    </div>
+    <p class="fund" id="wFund" hidden>Send at least <b>${CLAIM_FEE_QOR} test QOR</b> to this address for the network fee. This page checks every few seconds.</p>
+    <form id="claimForm" class="claim-form">
+      <label><span>Which flight?</span><select id="cFlight">${options}</select></label>
+      <label><span>What happened?</span><textarea id="cNote" rows="3" maxlength="280" required placeholder="e.g. The parcel fell on my car near the drop point."></textarea></label>
+      <div class="file-actions"><button class="btn primary" id="cSend" disabled>Sign and file claim</button><span class="muted tiny">Network fee about 0.04 QOR</span></div>
+    </form>
+    <div id="fileOut" aria-live="polite"></div>
+    <details class="wallet-more">
+      <summary>Recovery phrase and wallet options</summary>
+      <p class="muted tiny">Anyone with these words controls this wallet and its payouts. Write them down. This is a testnet wallet; don't keep real funds in it.</p>
+      <p class="mono words" id="wWordsShow" hidden>${esc(w.mnemonic)}</p>
+      <div class="file-actions"><button class="btn sm" id="wShow">Show words</button><button class="btn sm" id="wForget">Remove from this browser</button></div>
+    </details>`;
+  let funded = false;
+  const refresh = async () => {
+    try {
+      const b = await balanceUqor(w.address);
+      funded = Number(b) / 1e6 >= CLAIM_FEE_QOR / 2;
+      $("#wBal").className = `badge ${funded ? "ok" : "warn"}`;
+      $("#wBal").textContent = `${qor(b.toString())} QOR`;
+      $("#wFund").hidden = funded;
+      $<HTMLButtonElement>("#cSend").disabled = !funded;
+    } catch {
+      $("#wBal").textContent = "Balance unavailable";
+    }
+  };
+  refresh();
+  walletPoll = setInterval(() => {
+    if (!document.body.contains(box)) return clearInterval(walletPoll);
+    if (!funded) refresh();
+  }, 8000);
+  $("#wCopy").onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(w.address);
+      $("#wCopy").textContent = "Copied";
+    } catch {
+      getSelection()?.selectAllChildren($("#wAddr"));
+    }
+  };
+  $("#wShow").onclick = () => {
+    const p = $("#wWordsShow");
+    p.hidden = !p.hidden;
+    $("#wShow").textContent = p.hidden ? "Show words" : "Hide words";
+  };
+  $("#wForget").onclick = () => {
+    if ($("#wForget").dataset.sure !== "1") {
+      $("#wForget").dataset.sure = "1";
+      $("#wForget").textContent = "Click again: I saved my words";
+      return;
+    }
+    forgetWallet();
+    renderFileBox(undefined, flight);
+  };
+  $("#claimForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const flightId = $<HTMLSelectElement>("#cFlight").value;
+    const note = $<HTMLTextAreaElement>("#cNote").value.trim();
+    const out = $("#fileOut");
+    if (!note) return;
+    const send = $<HTMLButtonElement>("#cSend");
+    send.disabled = true;
+    try {
+      const r = await fileClaim(client, w, { rollupId: data.rollup.rollupId, flight: flightId, note }, (step) => {
+        out.innerHTML = `<p class="found"><i class="spin inline"></i>${esc(step)}</p>`;
+      });
+      const f = flights.find((x) => x.id === flightId);
+      out.innerHTML = `<div class="result ok"><span class="icon">✓</span><div><b>Claim filed on QoreChain.</b>
+        <span>For “${esc(f?.name ?? flightId)}” · block ${r.height.toLocaleString()} · fee ${qor(r.feeUqor.toString())} QOR</span>
+        <span class="mono block">${esc(r.txhash)}</span></div></div>
+        <p class="muted tiny next">Next: the watchtower opens the sealed record and checks the six rules. If a rule was broken, 5 QOR is paid to your claim wallet. Check back with your address below.</p>`;
+      $<HTMLTextAreaElement>("#cNote").value = "";
+      $<HTMLInputElement>("#addr").value = w.address;
+      refresh();
+    } catch (err) {
+      out.innerHTML = `<p class="alert">${esc(err instanceof Error ? err.message : String(err))}</p>`;
+    } finally {
+      send.disabled = !funded;
+    }
   });
 }
 
