@@ -5,7 +5,8 @@
  * required), so a browser wallet like Keplr cannot sign a claim on its own.
  * Instead the page creates a QoreChain account from a fresh recovery phrase:
  * a secp256k1 key plus its canonical ML-DSA-87 key. The first transaction
- * carries the ML-DSA-87 public key, which registers it on chain.
+ * is a one-time MsgRegisterPQCKeyV2 (with a proof of possession) that
+ * registers the ML-DSA-87 key on chain; every later transaction is hybrid.
  *
  * The phrase stays in this browser (localStorage) and is shown to the user so
  * they can keep it. Transactions go through the site's proxy (/api/rest),
@@ -13,7 +14,7 @@
  */
 import { createRdkRegistry, depositToRollupMsg, postRollupDataMsg, resolvePqcKeypair, type RdkClient } from "@qorechain/rdk";
 import type { EncodeObject } from "@cosmjs/proto-signing";
-import { buildHybridTx, deriveNativeAccount, directSignerFromPrivateKey, generateMnemonic, validateMnemonic, type PqcKeypair } from "@qorechain/sdk";
+import { buildHybridTx, buildRegisterPqcKeyMsg, CHAIN_UPGRADE_V3_2_3, deriveNativeAccount, directSignerFromPrivateKey, generateMnemonic, isUpgradeApplied, qorechainRegistry, signProofOfPossession, validateMnemonic, type PqcKeypair } from "@qorechain/sdk";
 import { claimPost, decisionPost, type Claim, type Decision } from "../../rollup/src/flight/posts";
 
 const STORE = "skyproof.claimWallet.v1";
@@ -128,16 +129,22 @@ export async function sendHybrid(
   client: RdkClient,
   keys: SigningKeys,
   messages: EncodeObject[],
-  opts: { alsoSpendUqor?: bigint; what: string; progress?: (step: string) => void },
+  opts: { alsoSpendUqor?: bigint; what: string; progress?: (step: string) => void; registry?: ReturnType<typeof createRdkRegistry>; registering?: boolean },
 ): Promise<Sent> {
   const progress = opts.progress ?? (() => undefined);
+  // A new account must register its ML-DSA-87 key first: QoreChain refuses any other
+  // transaction from an account with no PQC key ("classical fallback not allowed").
+  if (keys.includePqcPublicKey && !opts.registering) {
+    await registerPqcKey(client, keys, progress);
+    keys = { ...keys, includePqcPublicKey: false };
+  }
   progress("Preparing your quantum-safe signature…");
   const signer = await directSignerFromPrivateKey(keys.privateKey, "qor");
   const info = await restJson<{ account?: { account_number: string; sequence: string }; message?: string }>(`/cosmos/auth/v1beta1/accounts/${keys.address}`);
   if (!info.ok || !info.json.account) throw new Error("This wallet has no QOR yet. Add test QOR to it first.");
   const { account_number, sequence } = info.json.account;
 
-  const registry = createRdkRegistry();
+  const registry = opts.registry ?? createRdkRegistry();
   const build = (gas: number) =>
     buildHybridTx({
       registry,
@@ -179,6 +186,22 @@ export async function sendHybrid(
     return { txhash: res.txhash, height: Number(r.height), feeUqor };
   }
   throw new Error(`Sent (${res.txhash}), but not confirmed yet. Check again in a minute.`);
+}
+
+/** One-time registration of the account's ML-DSA-87 key (MsgRegisterPQCKeyV2 + proof of possession). */
+async function registerPqcKey(client: RdkClient, keys: SigningKeys, progress: (step: string) => void): Promise<void> {
+  progress("Registering your quantum-safe key on QoreChain (first time only)…");
+  const pop = (await isUpgradeApplied({ rest: REST, upgrade: CHAIN_UPGRADE_V3_2_3 }))
+    ? signProofOfPossession({ chainId: client.network.chainId, account: keys.address, keypair: keys.pqc })
+    : undefined;
+  const msg = buildRegisterPqcKeyMsg(keys.address, { pqcKeypair: keys.pqc, proofOfPossession: pop });
+  // The registration carries the key in its hybrid extension too, so the chain can check its signature.
+  await sendHybrid(client, keys, [msg], {
+    what: "key registration",
+    progress,
+    registry: qorechainRegistry() as unknown as ReturnType<typeof createRdkRegistry>,
+    registering: true,
+  });
 }
 
 /** SHA-256 (hex) of a file, computed in the browser. The file itself is never uploaded. */
