@@ -17,9 +17,9 @@ What SkyProof protects, who might attack it, and what stops them. Code reference
 |---|---|---|---|
 | Drone | ML-DSA-87 signing key | Signing what its sensors and safety model reported | — (sensor honesty is out of scope, see Limits) |
 | Operator | Rollup creator + submitter key, drone bond | Posting flights and batches | Telling the truth: every post and batch is checked |
-| Investigator, insurer | ML-KEM-1024 keys | Reading sealed records | Moving money |
+| Investigator, insurer | ML-KEM-1024 keys; the insurer also an ML-DSA-87 account | Reading sealed records; the insurer decides claims the rules sent to review | Moving money: the insurer only posts a decision, the watchtower pays |
 | Judge / watchtower | Challenger key, claims-pool ledger key | Applying the public rules B1–B6 and signing payouts | — its verdicts are reproducible (below) |
-| Victim | Any qor1 address | Filing a claim | — |
+| Victim | A qor1 address (the website creates one in the browser) | Filing a claim with a 1 QOR deposit | Telling the truth: a claim with no breach goes to the insurer |
 | Anyone | — | Re-checking batches, receipts and verdicts | — |
 
 ## Threats and mitigations
@@ -50,15 +50,18 @@ What SkyProof protects, who might attack it, and what stops them. Code reference
 | Submitter publishes a batch that pays itself or skips a payout | Optimistic settlement with qledger-v1: the watchtower re-executes every batch and sends a fraud proof the chain re-checks; the dishonest submitter's bond is slashed. | `ledger.ts` `checkBatch`, `cli/watchtower.ts` |
 | A forged payout | Pool payouts are qledger `WITHDRAW` txs that need the pool's ML-DSA-44 signature; any other key moves nothing (tested). | `ledger.test.ts` |
 | A payout to an address that can never receive it | Claims from non-canonical addresses are refused up front (such a withdrawal is a no-op on chain). | `readPosts` |
-| Claim spam | Every claim is an on-chain post the claimant pays for (10 uqor per byte, 1 KiB minimum, plus gas). One claim per victim per flight. | `readPosts` |
-| Operator drains its bond before claims are judged | A bond exit is paid only when no claim is open, and never beyond the pool balance. | `decide` |
+| Claim spam and false claims | Every claim must carry a 1 QOR deposit into the claims pool, in the same transaction; one deposit backs one claim, and one claim per victim per flight. A claim with a breach gets its deposit back with the payout; a claim the insurer rejects as false loses it. Plus the posting fee (10 uqor per byte, plus gas). | `readPosts`, `decide` |
+| A fake insurer decision | Decisions count only from the insurer's address (hybrid ML-DSA-87 signed tx), only for a claim in review, and only once. | `readPosts` |
+| Forged photo evidence | Only the photo's SHA-256 goes on chain at filing time; the insurer checks the photo the victim shows them against it, so it can't be swapped later. | website, Insurers page |
+| Operator drains its bond before claims are judged | A bond exit is paid only when no claim is open or with the insurer, and never beyond the pool balance. | `decide` |
 | A fake settlement receipt | `verifySettlementReceipt` re-reads every field from chain state: the anchor, the creator's registered ML-DSA-87 key and the chain id. | `cli/receipt.ts` |
 
 ## Trust assumptions we accept
 
 1. **The judge holds the claims-pool key.** The judge could refuse to pay or pay wrongly. This is the price of automatic payouts in a ledger where only key holders move funds. It is bounded: the rules are public, deterministic code (`rules.ts`), every input is on chain, and anyone holding a recipient key can re-run a verdict and prove the judge wrong. A production version would split the pool key across several judges (threshold signing).
 2. **The investigator and insurer can read the records.** By design. A record sealed to nobody could not be judged.
-3. **One mnemonic derives every demo role.** This lets one person run the demo. In production each role holds its own secret.
+3. **The insurer judges claims with no breach.** A human decision is needed when the signed record shows no broken rule but someone may still have been hurt. It is signed and public, with its reason, and it can only pay or refuse a claim the rules sent to review: it cannot touch claims the rules decided.
+4. **One mnemonic derives every demo role.** This lets one person run the demo. In production each role holds its own secret.
 
 ## Out of scope / limits
 
