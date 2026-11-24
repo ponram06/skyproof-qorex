@@ -103,7 +103,8 @@ function buildFlights(d: Data): Flight[] {
       segs,
       intact: segs.every((s) => s.sigOk && s.chainOk && s.sealed),
       records: segs.reduce((n, s) => n + s.header.n, 0),
-      claim: d.claims.find((c) => c.flight === id),
+      // the newest claim on this flight (a flight can be claimed by several people)
+      claim: d.claims.filter((c) => c.flight === id).pop(),
     };
   });
 }
@@ -760,7 +761,7 @@ function tourPage() {
   const c = pick.claim;
   const sc = scenarioOf(pick);
   const pay = c ? payoutFor(c) : undefined;
-  const claimPost = data.posts.find((p) => p.kind === "claim" && p.detail === pick.id);
+  const claimPost = c ? data.posts.find((p) => p.kind === "claim" && p.detail === pick.id && p.poster === c.victim) : undefined;
   const broken = brokenRules(c?.verdict);
   const fraud = data.fraud?.[0];
   const step = (n: number, title: string, lead: string, body: string) =>
@@ -787,9 +788,10 @@ function tourPage() {
             <p class="tiny"><a class="link" href="#/claims/${encodeURIComponent(pick.id)}">File your own claim on this flight →</a></p>` : "")}
       ${step(5, "The watchtower opens the sealed record and checks six rules", "The judge decrypts the record with its ML-KEM-1024 key and runs the six safety rules. No person decides this part.",
         `<div class="result ${c ? (c.verdict?.breach ? "bad" : "ok") : "wait"}"><span class="icon">${c ? (c.verdict?.breach ? "✕" : "✓") : "·"}</span><div><b>${c ? (c.verdict?.breach ? `Rule broken: ${broken.map((r) => esc(RULE[r] ?? r)).join(", ")}` : "No rule broken") : "Not judged: no claim"}</b>
-          <span>${c?.verdict?.breach ? esc(c.verdict.findings[0]?.detail ?? "") : c ? "The claim was rejected: the signed record shows the drone followed every rule." : "Rules are checked when someone claims."}</span></div></div>
+          <span>${c?.verdict?.breach ? esc(c.verdict.findings[0]?.detail ?? "") : c?.decision ? "The drone followed every rule, so the claim went to the insurer for a human review." : c ? "The claim was rejected: the signed record shows the drone followed every rule." : "Rules are checked when someone claims."}</span></div></div>
+         ${c?.decision ? `<div class="result ${c.decision.approve ? "ok" : "bad"}"><span class="icon">${c.decision.approve ? "✓" : "✕"}</span><div><b>Insurer ${c.decision.approve ? "approved" : "rejected"} the claim</b><span>“${esc(c.decision.reason)}” · signed with the insurer's quantum-safe key, on chain</span></div></div>` : ""}
          <div class="rules">${ruleList(broken)}</div>`)}
-      ${step(6, "The victim is paid automatically", pay ? "The judge signs a payout from the claims pool. QoreChain settles it after the challenge window." : c ? "No rule was broken, so nothing was paid. A claim filed today would go to the insurer for a human review." : "No claim, no payout.",
+      ${step(6, "The victim is paid automatically", pay ? `The judge signs a payout from the claims pool${BigInt(c?.deposit ?? "0") > 0n ? ", with the claimant's 1 QOR deposit back" : ""}. QoreChain settles it after the challenge window.` : c ? "No rule was broken, so nothing was paid. A claim filed today would go to the insurer for a human review." : "No claim, no payout.",
         pay ? `<div class="kv"><div><span>Paid</span><b>${qor(pay.amount)} QOR to ${esc(short(c!.victim))}</b></div><div><span>In batch</span><b>${pay.batch}</b></div></div>
               ${pay.tx ? `<div class="tour-act"><button class="btn primary" id="tPay" data-tx="${esc(pay.tx)}">Check the payment on QoreChain</button><span class="tiny mono muted">${esc(short(pay.tx, 10))}</span></div><div class="tour-out" id="tPayOut"></div>` : ""}` : "")}
       ${step(7, "A cheating operator loses their bond", "The operator once posted a batch with a fake payout list. The watchtower re-ran it, proved the fraud on chain, and QoreChain slashed the operator.",
