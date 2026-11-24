@@ -71,16 +71,19 @@ export interface ReadOptions {
 
 export function readPosts(st: WatchState, entries: QledgerEntry[], creator: string, opts: ReadOptions = {}): void {
   st.credits ??= {};
+  // Count this batch's deposits first: a claim's deposit is in the same transaction,
+  // and this does not depend on the order the chain writes the two inbox entries.
+  for (const e of entries) {
+    if (!e.poster.startsWith(QLEDGER_DEPOSIT_POSTER_PREFIX)) continue;
+    const d = decodeQledgerDeposit(e.payload);
+    if (d && opts.poolAccount && equalBytes(d.account, unhex(opts.poolAccount))) {
+      const who = e.poster.slice(QLEDGER_DEPOSIT_POSTER_PREFIX.length);
+      st.credits[who] = (BigInt(st.credits[who] ?? "0") + d.amount).toString();
+    }
+  }
   for (const e of entries) {
     const p = e.payload;
-    if (e.poster.startsWith(QLEDGER_DEPOSIT_POSTER_PREFIX)) {
-      const d = decodeQledgerDeposit(p);
-      if (d && opts.poolAccount && equalBytes(d.account, unhex(opts.poolAccount))) {
-        const who = e.poster.slice(QLEDGER_DEPOSIT_POSTER_PREFIX.length);
-        st.credits[who] = (BigInt(st.credits[who] ?? "0") + d.amount).toString();
-      }
-      continue;
-    }
+    if (e.poster.startsWith(QLEDGER_DEPOSIT_POSTER_PREFIX)) continue;
     const reg = parseDroneReg(p);
     if (reg) {
       if (e.poster !== creator) st.rejectedPosts.push(`drone ${reg.drone} registered by ${e.poster}, not the rollup creator`);

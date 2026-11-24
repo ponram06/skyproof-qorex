@@ -21,7 +21,8 @@
     "dry-run": "tsx src/cli/dry-run.ts",
     "export-web": "tsx src/cli/export-web.ts",
     "fraud-demo": "tsx src/cli/fraud-demo.ts",
-    "investigator-key": "tsx src/cli/investigator-key.ts"
+    "investigator-key": "tsx src/cli/investigator-key.ts",
+    "insurer-key": "tsx src/cli/insurer-key.ts"
   },
   "dependencies": {
     "@cosmjs/stargate": "^0.39.0",

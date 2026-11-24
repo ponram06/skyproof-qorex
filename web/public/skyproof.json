@@ -1,5 +1,5 @@
 {
- "generatedAt": "2026-11-23T13:06:32.705Z",
+ "generatedAt": "2026-11-24T10:17:54.684Z",
  "chainId": "qorechain-diana",
  "rollup": {
   "rollupId": "skyproof-1",
@@ -793,6 +793,12 @@
    }
   }
  ],
+ "claimsPool": {
+  "account": "08aa7baf5c445f679998e50b8af4e5e59f7ab4a159a8e2c1e52100ab13622ddc",
+  "depositUqor": "1000000",
+  "payoutUqor": "5000000"
+ },
+ "insurer": "qor1hcpn88ydjgd94t9tm7rzxkuqnjaprqj57jngej",
  "watchtower": [
   {
    "batch": 0,

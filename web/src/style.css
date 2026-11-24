@@ -273,3 +273,25 @@ tr.hit td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
 .spin.inline { display: inline-block; vertical-align: -3px; margin-right: 8px; }
 .next { margin-top: 8px; }
 .result .block { margin-top: 4px; }
+
+/* ---------- claim flow, insurer desk ---------- */
+.flow { list-style: none; padding: 0; margin: 0 0 16px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; counter-reset: f; }
+.flow li { counter-increment: f; padding: 14px 16px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); display: grid; gap: 4px; }
+.flow li::before { content: counter(f); display: grid; place-items: center; width: 26px; height: 26px; border-radius: 8px; background: var(--accent); color: var(--accent-ink); font-weight: 800; font-size: 13px; }
+.flow li b { font-size: 15px; }
+.flow li span { font-size: 13.5px; color: var(--muted); }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.file input[type="text"], .file input:not([type]), .file input[type="datetime-local"], .review input { font: 15px var(--sans); padding: 10px 12px; border: 1px solid var(--line-2); border-radius: 10px; background: var(--bg); width: 100%; }
+.claim-form small { font-weight: 400; font-size: 13px; }
+.claim-form em { font-style: normal; font-weight: 400; }
+.review { padding: 18px 20px; display: grid; gap: 14px; }
+.review-head { display: flex; gap: 12px; align-items: start; }
+.review-head .grow span { display: block; font-size: 13.5px; }
+.empty { padding: 18px 20px; }
+.inv-mini { display: grid; gap: 10px; }
+.alert.inline { display: inline-block; margin: 0; padding: 4px 10px; }
+@media (max-width: 760px) {
+  .flow { grid-template-columns: 1fr 1fr; }
+  .two { grid-template-columns: 1fr; }
+}
+.inv-mini .mapbox { max-width: 420px; }
