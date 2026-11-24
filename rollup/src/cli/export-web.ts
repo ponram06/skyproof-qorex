@@ -9,11 +9,12 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { EMPTY_INBOX_ACC, fetchQledgerEntries, isRestNotFound, qledgerAccumulate, decodeQledgerTx, decodeQledgerDeposit } from "@qorechain/rdk";
 import { rdk, ROLLUP_ID } from "../config.js";
-import { parseClaim, parseDroneReg, parseExit } from "../flight/posts.js";
+import { parseClaim, parseDecision, parseDroneReg, parseExit } from "../flight/posts.js";
+import { account, poolKey } from "../keys.js";
 import { isBodyPost, isHeaderPost, parseHeaderPost } from "../flight/segment.js";
 import { load } from "../state.js";
 import { hex, sha256 } from "../util.js";
-import type { WatchState } from "../watchtower.js";
+import { CLAIM_DEPOSIT_UQOR, type WatchState } from "../watchtower.js";
 
 async function main() {
   const env = { chainId: rdk.network.chainId, rollupId: ROLLUP_ID };
@@ -54,6 +55,7 @@ async function main() {
         posts.push({ ...base, kind: "sealed body", detail: `${p.length} B, sha256 ${hex(sha256(p)).slice(0, 16)}…` });
       }
       else if (parseClaim(p)) posts.push({ ...base, kind: "claim", detail: parseClaim(p)!.flight });
+      else if (parseDecision(p)) posts.push({ ...base, kind: "insurer decision", detail: `${parseDecision(p)!.approve ? "approved" : "rejected"} ${parseDecision(p)!.flight}` });
       else if (parseExit(p) !== undefined) posts.push({ ...base, kind: "bond exit", detail: `${parseExit(p)} uqor` });
       else if (decodeQledgerDeposit(p)) posts.push({ ...base, kind: "deposit", detail: `${decodeQledgerDeposit(p)!.amount} uqor` });
       else if (decodeQledgerTx(p)) {
@@ -98,6 +100,9 @@ async function main() {
     bodies,
     posts,
     claims: tower.watch?.claims ?? [],
+    // What the website needs to file a claim (deposit into the pool) and to show the insurer desk.
+    claimsPool: { account: hex(poolKey().accountId), depositUqor: CLAIM_DEPOSIT_UQOR.toString(), payoutUqor: "5000000" },
+    insurer: (await account("insurer")).address,
     watchtower: tower.log ?? [],
     withdrawalsExecuted: load("withdrawals", {}),
     fraud,

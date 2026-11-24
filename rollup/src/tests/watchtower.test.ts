@@ -2,11 +2,11 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { encodeQledgerDeposit, qledgerKeypairFromSeed, type QledgerEntry } from "@qorechain/rdk";
 import { GENESIS, type FlightRecord } from "../flight/record.js";
-import { claimPost, droneRegPost, exitPost } from "../flight/posts.js";
+import { claimPost, decisionPost, droneRegPost, exitPost } from "../flight/posts.js";
 import { sealSegment } from "../flight/segment.js";
 import { executeBatch, QledgerLedger, withdrawTx } from "../ledger.js";
 import { hex } from "../util.js";
-import { decide, emptyState, judgeFlight, readPosts } from "../watchtower.js";
+import { CLAIM_DEPOSIT_UQOR, decide, DEPOSIT_REQUIRED_FROM, emptyState, judgeFlight, readPosts } from "../watchtower.js";
 import { cleanFlight, DRONE, ENV, fixedRandom, INVESTIGATOR, PERMIT, RECIPIENTS } from "./fixtures.js";
 
 const CREATOR = "qor1crs332umw4zr9adcegafrc0yr8juke7t7rsre5";
@@ -89,4 +89,91 @@ test("a bond exit waits for open claims, then the payout is a real ledger withdr
     { height: 2, poster: "qor1judge", payload: withdrawTx(ENV, pool, 0n, CREATOR, a.payouts[0].amount) },
   ]);
   assert.equal(result.withdrawals[0].amount, 20n * QOR);
+});
+
+/* ---------- deposits and insurer review (claims from DEPOSIT_REQUIRED_FROM on) ---------- */
+
+const POOL = qledgerKeypairFromSeed(new Uint8Array(32).fill(5));
+const INSURER = "qor1hcpn88ydjgd94t9tm7rzxkuqnjaprqj57jngej";
+const H = DEPOSIT_REQUIRED_FROM + 10;
+const deposit = (amount = CLAIM_DEPOSIT_UQOR, to = POOL.accountId): QledgerEntry => ({ height: H, poster: `deposit:${VICTIM}`, payload: encodeQledgerDeposit(to, amount) });
+const newClaim = (): QledgerEntry => ({ height: H, poster: VICTIM, payload: claimPost({ flight: "F1", note: "hit", when: "2026-11-24T10:00", where: "Main St", evidence: "ab".repeat(32) }) });
+const decision = (approve: boolean, poster = INSURER): QledgerEntry => ({ height: H + 5, poster, payload: decisionPost({ flight: "F1", victim: VICTIM, approve, reason: approve ? "photo matches" : "no damage" }) });
+const overrideFlight = () => {
+  const recs = cleanFlight();
+  (recs.find((r) => r.k === "DECISION" && r.req === "r2") as { ok: boolean }).ok = false;
+  return recs;
+};
+const opts = { poolAccount: hex(POOL.accountId), insurer: INSURER };
+
+function runNew(...rounds: QledgerEntry[][]) {
+  const st = emptyState();
+  const payouts = [];
+  for (const entries of rounds) {
+    readPosts(st, entries, CREATOR, opts);
+    payouts.push(...decide(st, (f) => judgeFlight(st, f, ENV, member)?.verdict, 50n * QOR, 5n * QOR));
+  }
+  return { st, payouts };
+}
+
+test("a new claim without its 1 QOR deposit is refused", () => {
+  const { st } = runNew([reg(), ...flightPosts(overrideFlight()), newClaim()]);
+  assert.equal(st.claims.length, 0);
+  assert.ok(st.rejectedPosts.some((r) => r.includes("deposit")));
+});
+
+test("a deposit to some other account does not back a claim", () => {
+  const { st } = runNew([reg(), ...flightPosts(overrideFlight()), deposit(CLAIM_DEPOSIT_UQOR, new Uint8Array(32).fill(9)), newClaim()]);
+  assert.equal(st.claims.length, 0);
+});
+
+test("rule broken: the victim gets the payout plus the deposit back", () => {
+  const { st, payouts } = runNew([reg(), ...flightPosts(overrideFlight()), deposit(), newClaim()]);
+  assert.deepEqual(payouts.map((p) => [p.recipient, p.amount]), [[VICTIM, 6n * QOR]]);
+  assert.equal(st.claims[0].status, "paid");
+  assert.equal(st.claims[0].evidence, "ab".repeat(32));
+});
+
+test("no rule broken: the claim goes to the insurer, who approves it", () => {
+  const first = runNew([reg(), ...flightPosts(cleanFlight()), deposit(), newClaim()]);
+  assert.equal(first.payouts.length, 0);
+  assert.equal(first.st.claims[0].status, "review");
+  const { st, payouts } = runNew([reg(), ...flightPosts(cleanFlight()), deposit(), newClaim()], [decision(true)]);
+  assert.deepEqual(payouts.map((p) => [p.recipient, p.amount]), [[VICTIM, 6n * QOR]]);
+  assert.equal(st.claims[0].status, "paid");
+  assert.ok(payouts[0].reason.includes("approved by the insurer"));
+});
+
+test("the insurer rejects a false claim: nothing is paid and the deposit stays in the pool", () => {
+  const { st, payouts } = runNew([reg(), ...flightPosts(cleanFlight()), deposit(), newClaim()], [decision(false)]);
+  assert.equal(payouts.length, 0);
+  assert.equal(st.claims[0].status, "rejected");
+  assert.equal(st.claims[0].decision?.approve, false);
+});
+
+test("only the insurer can decide, and only a claim in review", () => {
+  const { st, payouts } = runNew([reg(), ...flightPosts(cleanFlight()), deposit(), newClaim()], [decision(true, "qor1someoneelse")]);
+  assert.equal(payouts.length, 0);
+  assert.equal(st.claims[0].status, "review");
+  // A decision on a breached (already paid) claim changes nothing.
+  const paid = runNew([reg(), ...flightPosts(overrideFlight()), deposit(), newClaim()], [decision(false)]);
+  assert.equal(paid.st.claims[0].status, "paid");
+});
+
+test("one deposit backs one claim", () => {
+  const second = { ...newClaim(), payload: claimPost({ flight: "F2", note: "again" }) };
+  const { st } = runNew([reg(), ...flightPosts(cleanFlight()), deposit(), newClaim(), second]);
+  assert.equal(st.claims.length, 1);
+});
+
+test("a bond exit waits while a claim is in review", () => {
+  const exit: QledgerEntry = { height: H + 1, poster: CREATOR, payload: exitPost(20n * QOR) };
+  const { payouts } = runNew([reg(), ...flightPosts(cleanFlight()), deposit(), newClaim(), exit]);
+  assert.equal(payouts.length, 0);
+});
+
+test("malformed posts are ignored, not fatal", () => {
+  const bad = (s: string): QledgerEntry => ({ height: H, poster: VICTIM, payload: new Uint8Array([...new TextEncoder().encode(s)]) });
+  const { st } = runNew([bad("SKYC1{not json"), bad("SKYC1[1,2]"), bad('SKYC1{"note":"no flight"}'), bad("SKYI1null")]);
+  assert.equal(st.claims.length, 0);
 });

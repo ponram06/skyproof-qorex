@@ -41,6 +41,7 @@ async function once() {
 
   const judge = await connect("judge");
   st.seen ??= {};
+  const readOpts = { poolAccount: hex(poolKey().accountId), insurer: (await account("insurer")).address };
 
   // An upheld fraud rejects that batch and every later one. If a batch we already applied is now
   // rejected or replaced, rewind to the state before it and re-read from there.
@@ -85,7 +86,7 @@ async function once() {
     }
     st.ledger = saveLedger(executeBatch(env, parent, entries).ledger);
     st.accFrom = hex(qledgerAccumulate({ ...env, from: b.inboxStart, accFrom, entries }));
-    readPosts(st.watch, entries, rollup.creator);
+    readPosts(st.watch, entries, rollup.creator, readOpts);
   }
 
   // Payouts the judge has posted but no batch has executed yet still count against the pool.
