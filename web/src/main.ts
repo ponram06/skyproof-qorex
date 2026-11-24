@@ -143,8 +143,8 @@ function home() {
     <h1>Every drone flight,<br /><span>on the record.</span></h1>
     <p class="sub">Drones log every move to a record nobody can edit. Break a safety rule, and the victim is paid automatically.</p>
     <div class="actions">
-      <button class="btn primary" data-scroll="demo">Try the demo</button>
-      <a class="btn" href="#/flights">See real flights</a>
+      <a class="btn primary" href="#/tour">Watch the guided demo</a>
+      <button class="btn" data-scroll="demo">Try a flight yourself</button>
     </div>
     <div class="stats">${stats.map(([v, k]) => `<div><b>${esc(v)}</b><span>${esc(k)}</span></div>`).join("")}</div>
   </section>
@@ -723,6 +723,156 @@ function insurerReady() {
 }
 
 
+
+/* ---------- guided demo: one real flight, end to end, checked live ---------- */
+
+const scenarioOf = (f: Flight): SimScenario => {
+  const k = Object.keys(FLIGHT_NAME).find((x) => f.id.includes(`-${x}-`)) ?? "normal";
+  return (SIM_SCENARIOS as readonly string[]).includes(k) ? (k as SimScenario) : "cheating";
+};
+const sha256Hex = async (h: string) => {
+  const bytes = Uint8Array.from(h.match(/../g) ?? [], (x) => parseInt(x, 16));
+  return [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))].map((b) => b.toString(16).padStart(2, "0")).join("");
+};
+/** The payout that paid a claim: the first withdrawal to the victim in a batch after the claim. */
+function payoutFor(c: Data["claims"][number]) {
+  if (c.status !== "paid") return undefined;
+  const post = data.posts.find((p) => p.kind === "claim" && p.detail === c.flight && p.poster === c.victim);
+  const used = new Set<string>();
+  for (const x of data.claims.filter((y) => y.status === "paid" && y.victim === c.victim)) {
+    const xp = data.posts.find((p) => p.kind === "claim" && p.detail === x.flight && p.poster === x.victim);
+    for (const b of data.batches) {
+      if (xp && b.index <= xp.batch) continue;
+      const w = b.withdrawals.find((w) => w.recipient === x.victim && w.index !== undefined && !used.has(w.index));
+      if (!w) continue;
+      used.add(w.index!);
+      if (x === c) return { batch: b.index, amount: w.amount, tx: data.withdrawalsExecuted?.[w.index!], claimHeight: post?.height };
+      break;
+    }
+  }
+  return undefined;
+}
+
+let tourFlight = "";
+function tourPage() {
+  const pick = flights.find((f) => f.id === tourFlight) ?? flights.find((f) => f.id.includes("-cheating-")) ?? flights[0];
+  tourFlight = pick.id;
+  const c = pick.claim;
+  const sc = scenarioOf(pick);
+  const pay = c ? payoutFor(c) : undefined;
+  const claimPost = data.posts.find((p) => p.kind === "claim" && p.detail === pick.id);
+  const broken = brokenRules(c?.verdict);
+  const fraud = data.fraud?.[0];
+  const step = (n: number, title: string, lead: string, body: string) =>
+    `<li class="card tour-step"><div class="tour-n">${n}</div><div class="tour-body"><h3>${title}</h3><p class="muted">${lead}</p>${body}</div></li>`;
+  return `
+  <section class="wrap page">
+    <div class="head"><h1>Guided demo</h1><p>One real drone flight on QoreChain testnet, from take-off to payout, in seven steps. Every “Check” button asks the chain live from your browser, so you don't have to trust this page.</p></div>
+    <div class="card tour-pick">
+      <span class="muted">Follow this flight:</span>
+      <div class="seg">${flights.map((f) => `<button class="${f.id === pick.id ? "on" : ""}" data-tf="${esc(f.id)}">${esc(f.name)}</button>`).join("")}</div>
+    </div>
+    <ol class="tour">
+      ${step(1, "The drone flies and asks permission", `Before every take-off, drop and landing the drone asks an AI safety check: “may I?”. Here's this flight's scenario played in 3D.`,
+        `<div id="tourView" class="view tour-view"></div>
+         <p class="tiny muted">Animation: the same scenario (“${esc(SCENARIO[sc].name)}”) run through the drone simulator. The real record is sealed: only the investigator and insurer can open it (step 5).</p>`)}
+      ${step(2, "Every part is signed with a quantum-safe key and saved on QoreChain", `The drone signs each part of its log with ML-DSA-87 and posts it to the rollup's inbox. ${pick.segs.length} parts, ${pick.records} records.`,
+        `<div class="tour-act"><button class="btn primary" id="tChain">Check on QoreChain</button><span class="tiny muted">Fetches each part's fingerprint from the chain and compares it to the signed part, then re-checks the drone's signature.</span></div>
+         <div class="tour-out" id="tChainOut"></div>`)}
+      ${step(3, "Nobody can edit it, not even the operator", "Change one number in the record and the drone's signature stops matching.",
+        `<div class="tour-act"><button class="btn" id="tTamper">Try to edit the record</button><span class="tiny muted">Removes one moment from part 1 in your browser.</span></div><div class="tour-out" id="tTamperOut"></div>`)}
+      ${step(4, "Someone on the ground files a claim", c ? "A claim is a signed post on the same rollup, so it is on the record too." : "Nobody filed a claim on this flight. Pick another flight above to see one.",
+        c ? `<div class="kv"><div><span>Claim</span><b>“${esc(c.note)}”</b></div><div><span>Filed by</span><b class="mono">${esc(short(c.victim))}</b></div>
+            <div><span>On chain</span><b>${claimPost ? `Block ${claimPost.height.toLocaleString()}` : "—"}</b></div><div><span>Deposit</span><b>${BigInt(c.deposit ?? "0") > 0n ? `${qor(c.deposit!)} QOR (refundable)` : "None (filed before deposits)"}</b></div></div>
+            <p class="tiny"><a class="link" href="#/claims/${encodeURIComponent(pick.id)}">File your own claim on this flight →</a></p>` : "")}
+      ${step(5, "The watchtower opens the sealed record and checks six rules", "The judge decrypts the record with its ML-KEM-1024 key and runs the six safety rules. No person decides this part.",
+        `<div class="result ${c ? (c.verdict?.breach ? "bad" : "ok") : "wait"}"><span class="icon">${c ? (c.verdict?.breach ? "✕" : "✓") : "·"}</span><div><b>${c ? (c.verdict?.breach ? `Rule broken: ${broken.map((r) => esc(RULE[r] ?? r)).join(", ")}` : "No rule broken") : "Not judged: no claim"}</b>
+          <span>${c?.verdict?.breach ? esc(c.verdict.findings[0]?.detail ?? "") : c ? "The claim was rejected: the signed record shows the drone followed every rule." : "Rules are checked when someone claims."}</span></div></div>
+         <div class="rules">${ruleList(broken)}</div>`)}
+      ${step(6, "The victim is paid automatically", pay ? "The judge signs a payout from the claims pool. QoreChain settles it after the challenge window." : c ? "No rule was broken, so nothing was paid. A claim filed today would go to the insurer for a human review." : "No claim, no payout.",
+        pay ? `<div class="kv"><div><span>Paid</span><b>${qor(pay.amount)} QOR to ${esc(short(c!.victim))}</b></div><div><span>In batch</span><b>${pay.batch}</b></div></div>
+              ${pay.tx ? `<div class="tour-act"><button class="btn primary" id="tPay" data-tx="${esc(pay.tx)}">Check the payment on QoreChain</button><span class="tiny mono muted">${esc(short(pay.tx, 10))}</span></div><div class="tour-out" id="tPayOut"></div>` : ""}` : "")}
+      ${step(7, "A cheating operator loses their bond", "The operator once posted a batch with a fake payout list. The watchtower re-ran it, proved the fraud on chain, and QoreChain slashed the operator.",
+        fraud ? `<div class="kv"><div><span>Fake batch</span><b>#${esc(fraud.batch)}</b></div><div><span>Operator lost</span><b>${qor(fraud.slashed)} QOR (half burned)</b></div></div>
+          <div class="tour-act"><button class="btn primary" id="tFraud" data-tx="${esc(fraud.tx)}">Check the fraud proof on QoreChain</button><span class="tiny mono muted">${esc(short(fraud.tx, 10))}</span></div><div class="tour-out" id="tFraudOut"></div>` : "")}
+    </ol>
+    <div class="card tour-next">
+      <b>Try each role yourself</b>
+      <div class="who-mini">
+        <a class="btn" href="#/claims">I was hurt: file a claim</a>
+        <a class="btn" href="#/operator">I run drones: operator console</a>
+        <a class="btn" href="#/insurer">I'm the insurer: review claims</a>
+        <a class="btn" href="#/proof">Verify every batch</a>
+      </div>
+    </div>
+  </section>`;
+}
+
+function tourReady() {
+  const f = flights.find((x) => x.id === tourFlight)!;
+  $$<HTMLButtonElement>("[data-tf]").forEach((b) =>
+    b.addEventListener("click", () => {
+      tourFlight = b.dataset.tf!;
+      const y = window.scrollY;
+      route();
+      window.scrollTo(0, y);
+    }),
+  );
+  const sc = scenarioOf(f);
+  const recs = simulate({ scenario: sc, flight: `tour-${sc}`, drone: "SKY-001", permit: DEMO_PERMIT, permitHash: "demo", seed: 7 + SIM_SCENARIOS.indexOf(sc) });
+  disposeArenas();
+  arenas.push(mountArena($("#tourView"), recs as Rec[], DEMO_PERMIT, judge(recs, DEMO_PERMIT), { autoplay: true, compact: true }));
+
+  const busy = (el: HTMLElement, t: string) => (el.innerHTML = `<p class="found"><i class="spin inline"></i>${esc(t)}</p>`);
+  $<HTMLButtonElement>("#tChain").addEventListener("click", async () => {
+    const out = $("#tChainOut");
+    busy(out, "Asking QoreChain…");
+    const posts = data.headers.filter((h) => parseHeaderPost(h.post).header.flight === f.id);
+    const rows = await Promise.all(
+      posts.map(async (h) => {
+        const p = parseHeaderPost(h.post);
+        const onChain = await client.rest.getPostedData(data.rollup.rollupId, h.seq).catch(() => undefined);
+        const match = !!onChain && onChain.dataHash.toLowerCase() === (await sha256Hex(h.post));
+        const sig = verifyHeader(p.header, p.signature, data.drones[p.header.drone].publicKey);
+        return { idx: p.header.idx, seq: h.seq, height: onChain?.height ?? h.height, kept: !!onChain, match, sig };
+      }),
+    );
+    rows.sort((a, b) => a.idx - b.idx);
+    const good = rows.filter((r) => (r.match || !r.kept) && r.sig).length;
+    const kept = rows.filter((r) => r.kept).length;
+    out.innerHTML = `<div class="result ${good === rows.length ? "ok" : "bad"}"><span class="icon">${good === rows.length ? "✓" : "✕"}</span><div>
+      <b>${good === rows.length ? `All ${rows.length} parts check out` : `${rows.length - good} part(s) don't match`}</b>
+      <span>${kept} of ${rows.length} matched byte for byte with QoreChain's copy${kept < rows.length ? " (older posts the chain no longer keeps were checked by signature only)" : ""} · drone signatures valid.</span></div></div>
+      <div class="scroll"><table class="table"><thead><tr><th>Part</th><th>Inbox #</th><th>Block</th><th>Same as on chain</th><th>Drone signature</th></tr></thead><tbody>
+      ${rows.map((r) => `<tr><td>${r.idx + 1}</td><td>${r.seq}</td><td>${r.height.toLocaleString()}</td><td>${r.kept ? badge(r.match ? "ok" : "bad", r.match ? "Yes" : "No") : badge("plain", "Not kept")}</td><td>${badge(r.sig ? "ok" : "bad", r.sig ? "Valid" : "Invalid")}</td></tr>`).join("")}
+      </tbody></table></div>`;
+  });
+  $<HTMLButtonElement>("#tTamper").addEventListener("click", () => {
+    const s0 = f.segs[0];
+    const ok = verifyHeader({ ...s0.header, n: s0.header.n - 1 }, s0.signature, data.drones[s0.header.drone].publicKey);
+    $("#tTamperOut").innerHTML = `<div class="result ${ok ? "bad" : "ok"}"><span class="icon">${ok ? "✕" : "✓"}</span><div><b>${ok ? "Edit not detected" : "Edit caught"}</b>
+      <span>Part 1 claimed ${s0.header.n} records; we changed it to ${s0.header.n - 1}. ${ok ? "" : "The drone's quantum-safe signature no longer matches, so the edited record is rejected."}</span></div></div>`;
+  });
+  const txCheck = (btnId: string, outId: string, what: string) => {
+    const btn = document.getElementById(btnId) as HTMLButtonElement | null;
+    btn?.addEventListener("click", async () => {
+      const out = $(outId);
+      busy(out, "Asking QoreChain…");
+      try {
+        const t = (await client.rest.getTx(btn.dataset.tx!)) as { tx_response?: { code: number; height: string; timestamp?: string; gas_used?: string } };
+        const r = t.tx_response;
+        if (!r) throw new Error("not found");
+        out.innerHTML = `<div class="result ${r.code === 0 ? "ok" : "bad"}"><span class="icon">${r.code === 0 ? "✓" : "✕"}</span><div><b>${r.code === 0 ? `${what}: confirmed on QoreChain` : `Transaction failed (code ${r.code})`}</b>
+          <span>Block ${Number(r.height).toLocaleString()}${r.timestamp ? ` · ${esc(new Date(r.timestamp).toLocaleString())}` : ""} · signed with a hybrid quantum-safe signature</span></div></div>`;
+      } catch (e) {
+        out.innerHTML = `<p class="alert">Couldn't read it from QoreChain right now (${esc(e instanceof Error ? e.message : String(e))}).</p>`;
+      }
+    });
+  };
+  txCheck("tPay", "#tPayOut", "Payment");
+  txCheck("tFraud", "#tFraudOut", "Fraud proof");
+}
+
 /* ---------- operator console ---------- */
 
 /** When a flight started: the drone's flight id ends in its take-off time (ms). */
@@ -849,6 +999,7 @@ const pages: Record<string, [() => string, (() => void)?]> = {
   investigate: [investigatePage, investigateReady],
   insurer: [insurerPage, insurerReady],
   operator: [operatorPage, operatorReady],
+  tour: [tourPage, tourReady],
 };
 
 function route() {
