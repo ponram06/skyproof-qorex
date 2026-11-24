@@ -181,7 +181,7 @@ function home() {
     <div class="who">
       ${[
         ["People on the ground", "Get paid when a drone breaks the rules, without a court case.", "#/claims", "See claims"],
-        ["Drone operators", "Prove every flight was safe, with a record nobody can doubt.", "#/flights", "See flights"],
+        ["Drone operators", "Prove every flight was safe, with a record nobody can doubt.", "#/operator", "Open the console"],
         ["Insurers and investigators", "Open the sealed record and get a decision in seconds.", "#/investigate", "Open a record"],
       ]
         .map(([t, p, href, cta]) => `<a class="card who-card" href="${href}"><h3>${t}</h3><p>${p}</p><span class="more">${cta} →</span></a>`)
@@ -722,6 +722,123 @@ function insurerReady() {
   );
 }
 
+
+/* ---------- operator console ---------- */
+
+/** When a flight started: the drone's flight id ends in its take-off time (ms). */
+const flightTime = (id: string) => {
+  const ms = Number(id.split("-").pop());
+  return Number.isFinite(ms) && ms > 1e12 ? new Date(ms) : undefined;
+};
+const claimCost = (c: Data["claims"][number]) => BigInt(data.claimsPool?.payoutUqor ?? "5000000") + BigInt(c.deposit ?? "0");
+
+function operatorPage() {
+  const op = data.rollup.creator;
+  const against = data.claims;
+  const pending = against.filter((c) => c.status === "open" || c.status === "review");
+  const exposure = pending.reduce((s, c) => s + claimCost(c), 0n);
+  const paid = against.filter((c) => c.status === "paid");
+  const slashed = (data.fraud ?? []).reduce((s, f) => s + Number(f.slashed.replace("uqor", "")), 0);
+  const droneRows = Object.entries(data.drones).map(([id, d]) => {
+    const fl = flights.filter((f) => f.segs[0]?.header.drone === id);
+    const breaches = fl.filter((f) => f.claim?.verdict?.breach).length;
+    return `<tr><td><b>${esc(id)}</b><span class="muted block mono">ML-DSA-87 key ${esc(d.publicKey.slice(0, 16))}…</span></td>
+      <td>${fl.length}</td><td>${fl.reduce((n, f) => n + f.records, 0)}</td>
+      <td>${badge(fl.every((f) => f.intact) ? "ok" : "bad", fl.every((f) => f.intact) ? "All intact" : "Broken record")}</td>
+      <td>${breaches ? badge("bad", `${breaches} rule break${breaches > 1 ? "s" : ""}`) : badge("ok", "None found")}</td></tr>`;
+  });
+  const flightRows = [...flights]
+    .sort((a, b) => (flightTime(b.id)?.getTime() ?? 0) - (flightTime(a.id)?.getTime() ?? 0))
+    .map((f) => {
+      const t = flightTime(f.id);
+      const o = outcome(f.claim);
+      const batches = [...new Set(f.segs.map((s) => s.batch))];
+      return `<tr><td><a class="link" href="#/flights/${encodeURIComponent(f.id)}"><b>${esc(f.name)}</b></a><span class="muted block">${t ? esc(t.toLocaleString()) : "—"} · drone ${esc(f.segs[0]?.header.drone ?? "?")}</span></td>
+        <td>${f.records}<span class="muted block">${f.segs.length} sealed parts</span></td>
+        <td>${badge(f.intact ? "ok" : "bad", f.intact ? "Intact" : "Broken")}</td>
+        <td>${batches.map((b) => `<span class="bstatus" data-b="${b}">${badge("plain", `batch ${b}`)}</span>`).join(" ")}</td>
+        <td>${badge(o.tone, o.label)}</td></tr>`;
+    });
+  const claimRows = against.map((c) => {
+    const f = flights.find((x) => x.id === c.flight);
+    const cost = c.status === "paid" ? `${qor(claimCost(c).toString())} QOR paid` : c.status === "rejected" ? "Nothing paid" : `Up to ${qor(claimCost(c).toString())} QOR`;
+    return `<tr><td>“${esc(c.note)}”<span class="muted block">${esc(short(c.victim))}${c.height ? ` · block ${c.height.toLocaleString()}` : ""}</span></td>
+      <td><a class="link" href="#/flights/${encodeURIComponent(c.flight)}">${esc(f?.name ?? c.flight)}</a></td><td>${claimBadge(c)}</td><td>${cost}</td></tr>`;
+  });
+  const stats: [string, string, string][] = [
+    ["opBond", `${qor(data.rollup.stakeAmount)} QOR`, "bond locked in the rollup"],
+    ["", `${Object.keys(data.drones).length} · ${flights.length}`, "drones · flights on record"],
+    ["", `${pending.length}`, `claims pending (up to ${qor(exposure.toString())} QOR)`],
+    ["", `${paid.length} · ${qor(paid.reduce((s, c) => s + claimCost(c), 0n).toString())} QOR`, "claims paid · total"],
+  ];
+  return `
+  <section class="wrap page">
+    <div class="head"><h1>Operator console</h1><p>Everything QoreChain holds about your drones: every flight they signed, its batch, the claims made against you and what they cost. You can't edit any of it, and neither can anyone else.</p></div>
+    <div class="card op-id">
+      <div class="grow"><span class="muted tiny">Operator (rollup creator)</span><b class="mono">${esc(op)}</b></div>
+      ${badge(data.rollup.status === "active" ? "ok" : "warn", `Rollup ${data.rollup.rollupId} · ${data.rollup.status}`)}
+      ${slashed ? badge("bad", `Slashed ${qor(slashed)} QOR for a fake batch`) : ""}
+    </div>
+    <div class="stats op-stats">${stats.map(([id, v, k]) => `<div><b${id ? ` id="${id}"` : ""}>${esc(v)}</b><span>${esc(k)}</span></div>`).join("")}</div>
+
+    <h2 class="sub-h">Live chain activity <span class="live-dot" id="opLiveDot"></span></h2>
+    <div class="card op-live">
+      <p class="muted tiny" id="opLiveNote">Reading the rollup's inbox on QoreChain…</p>
+      <div class="scroll"><table class="table"><thead><tr><th>Post</th><th>From</th><th>Size</th><th>Block</th></tr></thead><tbody id="opLive"></tbody></table></div>
+      <p class="muted tiny">Every message to the rollup in order, read live from the chain every 10 seconds. A drone in the air posts a signed, sealed part of its flight every few seconds (run <code>npm run fly</code> in <code>rollup/</code> to see one arrive).</p>
+    </div>
+
+    <h2 class="sub-h">Your drones</h2>
+    <div class="card flush"><div class="scroll"><table class="table"><thead><tr><th>Drone</th><th>Flights</th><th>Records</th><th>Signed records</th><th>Rules</th></tr></thead><tbody>${droneRows.join("")}</tbody></table></div></div>
+
+    <h2 class="sub-h">Flight log</h2>
+    <div class="card flush"><div class="scroll"><table class="table"><thead><tr><th>Flight</th><th>Records</th><th>Signed record</th><th>Saved in</th><th>Claim</th></tr></thead><tbody>${flightRows.join("")}</tbody></table></div></div>
+
+    <h2 class="sub-h">Claims against you</h2>
+    <div class="card flush"><div class="scroll"><table class="table"><thead><tr><th>Claim</th><th>Flight</th><th>Status</th><th>Cost to you</th></tr></thead><tbody>${claimRows.join("") || `<tr><td colspan="4" class="muted">No claims</td></tr>`}</tbody></table></div></div>
+    <p class="muted tiny">A bond exit (taking your QOR back out) waits while any claim is open or with the insurer, so a victim can always be paid.</p>
+  </section>`;
+}
+
+let opPoll: ReturnType<typeof setInterval> | undefined;
+function operatorReady() {
+  const op = data.rollup.creator;
+  const known = new Map(data.posts.map((p) => [`${p.height}|${p.poster}`, p]));
+  const label = (poster: string, height: number) => {
+    const k = known.get(`${height}|${poster}`);
+    if (k) return k.kind === "header" ? "Flight part (signed header)" : k.kind === "sealed body" ? "Flight part (sealed record)" : k.kind[0].toUpperCase() + k.kind.slice(1);
+    if (poster.startsWith("deposit:")) return "Deposit";
+    if (poster === op) return "Operator post (drone data)";
+    if (poster === data.insurer) return "Insurer decision";
+    return "Claim or other post";
+  };
+  const tick = async () => {
+    if (!document.getElementById("opLive")) return clearInterval(opPoll);
+    const [inbox, roll] = await Promise.all([client.rest.getInbox(data.rollup.rollupId), client.rest.getRollup(data.rollup.rollupId)]);
+    const head = inbox.headSequence;
+    const seqs = Array.from({ length: Math.min(10, head) }, (_, i) => head - i);
+    const rows = await Promise.all(seqs.map((q) => client.rest.getPostedData(data.rollup.rollupId, q).catch(() => undefined)));
+    const fresh = head - data.posts.length;
+    $("#opLive").innerHTML = rows
+      .map((r, i) => {
+        if (!r) return `<tr><td colspan="4" class="muted">#${seqs[i]} no longer kept by the chain</td></tr>`;
+        const who = r.poster.startsWith("deposit:") ? r.poster.slice(8) : r.poster;
+        return `<tr><td><b>#${r.sequence}</b> ${esc(label(r.poster, r.height))}</td><td class="mono">${who === op ? "you" : esc(short(who))}</td><td>${r.size.toLocaleString()} B</td><td>${r.height.toLocaleString()}</td></tr>`;
+      })
+      .join("");
+    $("#opLiveNote").textContent = `${head.toLocaleString()} messages in the inbox · ${inbox.consumedSequence.toLocaleString()} already settled in a batch${head > inbox.consumedSequence ? ` · ${head - inbox.consumedSequence} waiting for the next batch` : ""}${fresh > 0 ? ` · ${fresh} newer than this page's saved data` : ""}.`;
+    $("#opLiveDot").className = "live-dot on";
+    const bond = document.getElementById("opBond");
+    if (bond && roll.escrowBalance) bond.textContent = `${qor(roll.escrowBalance)} QOR`;
+  };
+  clearInterval(opPoll);
+  tick().catch((e) => {
+    console.error("operator live:", e);
+    $("#opLiveNote").textContent = "Couldn't reach QoreChain right now. Showing saved data only.";
+  });
+  opPoll = setInterval(() => tick().catch(() => undefined), 10_000);
+}
+
 /* ================= router + live status ================= */
 
 const pages: Record<string, [() => string, (() => void)?]> = {
@@ -731,6 +848,7 @@ const pages: Record<string, [() => string, (() => void)?]> = {
   proof: [proofPage, proofReady],
   investigate: [investigatePage, investigateReady],
   insurer: [insurerPage, insurerReady],
+  operator: [operatorPage, operatorReady],
 };
 
 function route() {
