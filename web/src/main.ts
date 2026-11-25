@@ -42,13 +42,15 @@ const SCENARIO: Record<SimScenario, { name: string; hint: string; about: string 
   normal: { name: "Normal delivery", hint: "By the book", about: "The drone asks before every move and gets a “Yes” each time." },
   people_below: { name: "Someone below", hint: "Drone waits", about: "A person is under the drop point. The drone hears “No”, waits, and drops once they leave." },
   link_lost: { name: "Signal lost", hint: "Lands safely", about: "The drone loses its safety check. It doesn't guess; it lands where it is." },
-  cheating: { name: "Operator ignores “No”", hint: "Breaks a rule", about: "A person is under the drop point. The safety check says “No”. The operator drops anyway." },
+  cheating: { name: "Operator ignores “No”", hint: "Person hit", about: "A person is under the drop point. The safety check says “No”. The operator drops anyway." },
   unapproved: { name: "Never asked", hint: "Breaks a rule", about: "The operator drops the parcel without asking first." },
   shortcut: { name: "No-fly shortcut", hint: "Breaks a rule", about: "The operator cuts straight through a no-fly zone." },
   altitude: { name: "Too high", hint: "Breaks a rule", about: "The operator cruises above the 120 m limit." },
-  wind: { name: "Too windy", hint: "Breaks a rule", about: "The safety check says it's too windy. The operator takes off anyway." },
+  wind: { name: "Too windy", hint: "Car hit", about: "The safety check says it's too windy. The operator takes off anyway." },
 };
 const SAFE: SimScenario[] = ["normal", "people_below", "link_lost"];
+/** The try-it shows only these four: each one looks different in 3D. */
+const SHOWN: SimScenario[] = ["normal", "people_below", "cheating", "wind"];
 /** Try-it: each scenario delivers to its own address (metres east, north of home base; the no-fly zone is 1.55 km north). */
 const lRoute = (x: number, y: number): World => ({ home: [0, 0], drop: [x, y], route: [[x, 0], [x, y]], shortcut: [[x, y]] });
 const TRY_WORLDS: Record<SimScenario, World> = {
@@ -221,10 +223,10 @@ function home() {
   </section>
 
   <section class="wrap section" id="demo">
-    <div class="head"><h2>Try it</h2><p>Pick a situation. Green ones are safe flights; red ones break a rule. Watch the drone, and read each step on the right as it happens.</p></div>
+    <div class="head"><h2>Try it</h2><p>Pick a situation. Green ones are safe flights; red ones break a rule. Watch the drone, and read each step under the view as it happens.</p></div>
     <div class="demo">
       <div class="picker" role="tablist" aria-label="Flight">
-        ${SIM_SCENARIOS.map((s) => `<button role="tab" data-s="${s}" class="${SAFE.includes(s) ? "safe" : "risky"}"><b>${esc(SCENARIO[s].name)}</b><span>${esc(SCENARIO[s].hint)}</span></button>`).join("")}
+        ${SHOWN.map((s) => `<button role="tab" data-s="${s}" class="${SAFE.includes(s) ? "safe" : "risky"}"><b>${esc(SCENARIO[s].name)}</b><span>${esc(SCENARIO[s].hint)}</span></button>`).join("")}
       </div>
       <div class="stage">
         <div id="result" class="result" aria-live="polite"></div>
