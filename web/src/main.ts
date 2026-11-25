@@ -21,7 +21,7 @@ interface Data {
   posts: { batch: number; seq: number; height: number; poster: string; kind: string; detail: string }[];
   fraud?: { tx: string; height: number; batch: string; challenger: string; slashed: string; burned: string }[];
   withdrawalsExecuted?: Record<string, string>;
-  claims: { flight: string; victim: string; note: string; status: string; verdict?: Verdict; deposit?: string; height?: number; when?: string; where?: string; evidence?: string; decision?: { approve: boolean; reason: string } }[];
+  claims: { flight: string; victim: string; note: string; status: string; verdict?: Verdict; deposit?: string; height?: number; when?: string; where?: string; evidence?: string; decision?: { approve: boolean; reason: string }; drone?: string; missing?: boolean }[];
   claimsPool?: { account: string; depositUqor: string; payoutUqor: string };
   insurer?: string;
   watchtower?: { batch: number; valid: boolean; note: string }[];
@@ -76,6 +76,15 @@ const flightTime = (id: string) => {
   const ms = Number(id.split("-").pop());
   return Number.isFinite(ms) && ms > 1e12 ? new Date(ms) : undefined;
 };
+
+/** When a flight was in the air: take-off from its id, end from its last signed part's block (2 s blocks). */
+function flightWindow(f: Flight): { start?: number; end?: number } {
+  const start = flightTime(f.id)?.getTime();
+  if (start === undefined) return {};
+  const hs = data.headers.filter((h) => parseHeaderPost(h.post).header.flight === f.id).map((h) => h.height);
+  const span = hs.length ? (Math.max(...hs) - Math.min(...hs)) * 2000 : 0;
+  return { start, end: start + Math.max(60_000, span + 30_000) };
+}
 
 let data: Data;
 let flights: Flight[] = [];
@@ -132,12 +141,20 @@ function outcome(c?: Flight["claim"]) {
   return { tone: "warn" as const, label: "Claim open" };
 }
 
+/** A claim's flight as a link, or the drone and time it names when no flight was published. */
+function claimFlight(c: Data["claims"][number]) {
+  const f = flights.find((x) => x.id === c.flight);
+  if (f) return `<a class="link" href="#/flights/${encodeURIComponent(c.flight)}">${esc(f.name)}</a>`;
+  const [drone, when] = c.flight.split("@");
+  return `<b>${esc(c.drone ?? drone)}</b> at ${esc((c.when ?? when ?? "").replace("T", " "))}<span class="muted block">${c.missing ? "No flight published by the operator" : "Waiting for the operator's record"}</span>`;
+}
+
 /** How a claim's status reads in the claims table. */
 function claimBadge(c: Data["claims"][number]) {
   const back = BigInt(c.deposit ?? "0") > 0n ? " + deposit back" : "";
   if (c.status === "paid") return badge("bad", c.decision ? `Insurer approved · paid ${qor(payoutUqor().toString())} QOR${back}` : `Paid ${qor(payoutUqor().toString())} QOR${back}`);
   if (c.status === "rejected") return badge("ok", c.decision ? "Rejected by insurer · deposit kept" : "Rejected");
-  if (c.status === "review") return badge("warn", "With the insurer");
+  if (c.status === "review") return badge("warn", c.missing ? "No record · with the insurer" : "With the insurer");
   return badge("warn", "Open");
 }
 
@@ -299,11 +316,10 @@ function flightsReady() {
 
 function claimsPage() {
   const rows = data.claims.map((c) => {
-    const f = flights.find((x) => x.id === c.flight);
     const broken = brokenRules(c.verdict);
     return `<tr data-victim="${esc(c.victim)}">
       <td><b>“${esc(c.note)}”</b><span class="muted block">by ${esc(short(c.victim))}</span></td>
-      <td><a class="link" href="#/flights/${encodeURIComponent(c.flight)}">${esc(f?.name ?? c.flight)}</a></td>
+      <td>${claimFlight(c)}</td>
       <td>${claimBadge(c)}${broken.length ? `<span class="muted block">${broken.map((r) => esc(RULE[r] ?? r)).join(", ")}</span>` : ""}${c.decision ? `<span class="muted block">Insurer: “${esc(c.decision.reason)}”</span>` : ""}</td>
     </tr>`;
   });
@@ -400,7 +416,7 @@ function renderFileBox(w: ClaimWallet | undefined, flight?: string) {
     });
     return;
   }
-  const options = flights.map((f) => `<option value="${esc(f.id)}"${f.id === flight ? " selected" : ""}>${esc(f.name)}</option>`).join("");
+  const droneOpts = Object.keys(data.drones).map((d) => `<option value="${esc(d)}">${esc(d)}</option>`).join("");
   box.innerHTML = `
     <div class="wallet">
       <div class="grow"><span class="muted tiny">Your claim wallet (payouts go here)</span><b class="mono" id="wAddr">${esc(w.address)}</b></div>
@@ -409,12 +425,16 @@ function renderFileBox(w: ClaimWallet | undefined, flight?: string) {
     </div>
     <p class="fund" id="wFund" hidden>Send at least <b>${CLAIM_FUNDS_QOR} test QOR</b> to this address: a 1 QOR deposit (you get it back if your claim is right) plus the network fee. This page checks every few seconds.</p>
     <form id="claimForm" class="claim-form">
-      <label><span>Which flight?</span><select id="cFlight">${options}</select></label>
-      <label><span>What happened?</span><textarea id="cNote" rows="3" maxlength="280" required placeholder="e.g. The parcel fell on my car near the drop point."></textarea></label>
       <div class="two">
-        <label><span>When?</span><input type="datetime-local" id="cWhen" /></label>
-        <label><span>Where?</span><input id="cWhere" maxlength="200" placeholder="e.g. 12 Main St, near the park" /></label>
+        <label><span>Which drone was it?</span><select id="cDrone"><option value="">I didn't see its ID</option>${droneOpts}</select>
+          <small class="muted">The ID is painted on the drone, and drones broadcast it (Remote ID).</small></label>
+        <label><span>When did it happen?</span><input type="datetime-local" id="cWhen" />
+          <small class="muted">Used to find the drone's flight at that moment.</small></label>
       </div>
+      <fieldset class="match"><legend>Which flight? <span class="muted">(flights in the air around that time)</span></legend><div id="cMatch"></div></fieldset>
+      <label><span>What happened?</span><textarea id="cNote" rows="3" maxlength="280" required placeholder="e.g. The parcel fell on my car near the drop point."></textarea></label>
+      <label><span>Where?</span><input id="cWhere" maxlength="200" placeholder="e.g. 12 Main St, near the park" />
+        <small class="muted">Public in your claim. If no rule was broken, the insurer opens the drone's sealed position log to check the drone was really there.</small></label>
       <label><span>Photo proof <em class="muted">(optional)</em></span><input type="file" id="cPhoto" accept="image/*" />
         <small class="muted">The photo stays on your device. Only its fingerprint (SHA-256) goes on chain, so when you show it to the insurer they can prove it is the same photo you filed.</small>
         <small class="mono" id="cPhotoHash"></small></label>
@@ -467,6 +487,49 @@ function renderFileBox(w: ClaimWallet | undefined, flight?: string) {
     forgetWallet();
     renderFileBox(undefined, flight);
   };
+  let picked = flight ?? "";
+  const renderMatch = () => {
+    const drone = $<HTMLSelectElement>("#cDrone").value;
+    const whenV = $<HTMLInputElement>("#cWhen").value;
+    const t = whenV ? new Date(whenV).getTime() : NaN;
+    const cands = flights
+      .filter((f) => !drone || f.segs[0]?.header.drone === drone)
+      .map((f) => {
+        const { start, end } = flightWindow(f);
+        const off = Number.isNaN(t) || start === undefined ? 0 : t < start ? start - t : t > end! ? t - end! : 0;
+        return { f, start, end, off };
+      })
+      .filter((c) => Number.isNaN(t) || c.off <= 3 * 3600_000)
+      .sort((a, b) => (Number.isNaN(t) ? (b.start ?? 0) - (a.start ?? 0) : a.off - b.off));
+    if (!picked || ![...cands.map((c) => c.f.id), noRecordId()].includes(picked)) picked = cands[0]?.f.id ?? noRecordId();
+    const near = (c: (typeof cands)[number]) =>
+      Number.isNaN(t) ? "" : c.off === 0 ? badge("ok", "In the air at that time") : badge("plain", `${Math.round(c.off / 60000)} min ${c.start! > t ? "after" : "before"} that`);
+    $("#cMatch").innerHTML =
+      (cands.length
+        ? cands
+            .map(
+              (c) => `<label class="match-row"><input type="radio" name="cPick" value="${esc(c.f.id)}"${c.f.id === picked ? " checked" : ""} />
+          <span class="grow"><b>${esc(c.f.name)}</b><span class="muted block">Drone ${esc(c.f.segs[0]?.header.drone ?? "?")} · took off ${c.start ? esc(new Date(c.start).toLocaleString()) : "—"} · about ${Math.max(1, Math.round((c.end! - c.start!) / 60000))} min in the air</span></span>${near(c)}</label>`,
+            )
+            .join("")
+        : `<p class="muted tiny">No published flight${drone ? ` of ${esc(drone)}` : ""} within 3 hours of that time.</p>`) +
+      `<label class="match-row nr"><input type="radio" name="cPick" value="${esc(noRecordId())}"${picked === noRecordId() ? " checked" : ""} />
+        <span class="grow"><b>My flight isn't listed</b><span class="muted block">The operator may not have published it. They get 30 minutes after your claim; with still no record, the insurer reviews your claim knowing the operator kept no record.</span></span></label>`;
+    $$<HTMLInputElement>('input[name="cPick"]').forEach((r) => r.addEventListener("change", () => (picked = r.value)));
+  };
+  const noRecordId = () => `${$<HTMLSelectElement>("#cDrone").value || "unknown-drone"}@${$<HTMLInputElement>("#cWhen").value || "unknown-time"}`;
+  if (flight) {
+    const f = flights.find((x) => x.id === flight);
+    if (f) $<HTMLSelectElement>("#cDrone").value = f.segs[0]?.header.drone ?? "";
+  }
+  const repick = () => {
+    picked = "";
+    renderMatch();
+  };
+  $("#cDrone").addEventListener("change", repick);
+  $("#cWhen").addEventListener("change", repick);
+  renderMatch();
+
   let evidence: string | undefined;
   $<HTMLInputElement>("#cPhoto").addEventListener("change", async (e) => {
     const f = (e.target as HTMLInputElement).files?.[0];
@@ -475,12 +538,17 @@ function renderFileBox(w: ClaimWallet | undefined, flight?: string) {
   });
   $("#claimForm").addEventListener("submit", async (e) => {
     e.preventDefault();
-    const flightId = $<HTMLSelectElement>("#cFlight").value;
+    const flightId = picked;
+    const drone = $<HTMLSelectElement>("#cDrone").value;
     const note = $<HTMLTextAreaElement>("#cNote").value.trim();
     const when = $<HTMLInputElement>("#cWhen").value;
     const where = $<HTMLInputElement>("#cWhere").value.trim();
     const out = $("#fileOut");
     if (!note) return;
+    if (flightId.includes("@") && (!drone || !when)) {
+      out.innerHTML = `<p class="alert">For a flight that isn't listed, choose the drone and say when it happened, so the claim names exactly what to look for.</p>`;
+      return;
+    }
     if (!data.claimsPool) {
       out.innerHTML = `<p class="alert">Claims are paused: the site's data has no claims pool yet.</p>`;
       return;
@@ -488,13 +556,13 @@ function renderFileBox(w: ClaimWallet | undefined, flight?: string) {
     const send = $<HTMLButtonElement>("#cSend");
     send.disabled = true;
     try {
-      const claim = { flight: flightId, note, ...(when ? { when } : {}), ...(where ? { where } : {}), ...(evidence ? { evidence } : {}) };
+      const claim = { flight: flightId, note, ...(when ? { when } : {}), ...(where ? { where } : {}), ...(evidence ? { evidence } : {}), ...(drone ? { drone } : {}) };
       const r = await fileClaim(client, w, { rollupId: data.rollup.rollupId, poolAccount: data.claimsPool.account, depositUqor: BigInt(data.claimsPool.depositUqor), claim }, (step) => {
         out.innerHTML = `<p class="found"><i class="spin inline"></i>${esc(step)}</p>`;
       });
       const f = flights.find((x) => x.id === flightId);
       out.innerHTML = `<div class="result ok"><span class="icon">✓</span><div><b>Claim filed on QoreChain, with your 1 QOR deposit.</b>
-        <span>For “${esc(f?.name ?? flightId)}” · block ${r.height.toLocaleString()} · fee ${qor(r.feeUqor.toString())} QOR</span>
+        <span>For “${esc(f?.name ?? `${drone} at ${when.replace("T", " ")} (no published flight)`)}” · block ${r.height.toLocaleString()} · fee ${qor(r.feeUqor.toString())} QOR</span>
         <span class="mono block">${esc(r.txhash)}</span></div></div>
         <p class="muted tiny next">Next: the watchtower opens the sealed record and checks the six rules. Rule broken: 5 QOR plus your deposit go to your claim wallet. No rule broken: an insurer reviews your claim${evidence ? " (keep your photo to show them)" : ""}. Check back with your address below.</p>`;
       $<HTMLTextAreaElement>("#cNote").value = "";
@@ -665,19 +733,18 @@ function insurerPage() {
   const review = data.claims.filter((c) => c.status === "review");
   const decided = data.claims.filter((c) => c.decision);
   const card = (c: Data["claims"][number], i: number) => {
-    const f = flights.find((x) => x.id === c.flight);
     return `<div class="card review" data-i="${i}">
       <div class="review-head"><div class="grow"><b>“${esc(c.note)}”</b><span class="muted">by <span class="mono">${esc(c.victim)}</span></span></div>${badge("warn", "Waiting for you")}</div>
       <div class="kv">
-        <div><span>Flight</span><b><a class="link" href="#/flights/${encodeURIComponent(c.flight)}">${esc(f?.name ?? c.flight)}</a></b></div>
-        <div><span>Rules check</span><b>No rule broken in the signed record</b></div>
+        <div><span>Flight</span><b>${claimFlight(c)}</b></div>
+        <div><span>Rules check</span><b>${c.missing ? "Operator published no record of this flight within 30 minutes of the claim" : "No rule broken in the signed record"}</b></div>
         <div><span>When / where (victim says)</span><b>${esc(c.when ?? "—")} · ${esc(c.where ?? "—")}</b></div>
         <div><span>Deposit</span><b>${qor(c.deposit ?? "0")} QOR (kept if you reject)</b></div>
       </div>
       <div class="tamper">
         <span class="grow tiny">${c.evidence ? `Photo fingerprint on chain: <span class="mono">${esc(c.evidence.slice(0, 24))}…</span>` : "No photo filed with this claim."}</span>
         ${c.evidence ? `<label class="btn sm">Check the victim's photo<input type="file" accept="image/*" hidden data-photo="${i}" /></label>` : ""}
-        <button class="btn sm" data-open="${i}">Open the flight record</button>
+        ${c.missing ? "" : `<button class="btn sm" data-open="${i}">Open the flight record</button>`}
       </div>
       <div class="msg-out" id="rv${i}"></div>
       <label class="claim-form"><span>Your reason (stored on chain)</span><input data-reason="${i}" maxlength="280" placeholder="e.g. Photo shows damage at the drop point, matches the flight path." /></label>
@@ -954,10 +1021,9 @@ function operatorPage() {
         <td>${badge(o.tone, o.label)}</td></tr>`;
     });
   const claimRows = against.map((c) => {
-    const f = flights.find((x) => x.id === c.flight);
     const cost = c.status === "paid" ? `${qor(claimCost(c).toString())} QOR paid` : c.status === "rejected" ? "Nothing paid" : `Up to ${qor(claimCost(c).toString())} QOR`;
     return `<tr><td>“${esc(c.note)}”<span class="muted block">${esc(short(c.victim))}${c.height ? ` · block ${c.height.toLocaleString()}` : ""}</span></td>
-      <td><a class="link" href="#/flights/${encodeURIComponent(c.flight)}">${esc(f?.name ?? c.flight)}</a></td><td>${claimBadge(c)}</td><td>${cost}</td></tr>`;
+      <td>${claimFlight(c)}</td><td>${claimBadge(c)}</td><td>${cost}</td></tr>`;
   });
   const stats: [string, string, string][] = [
     ["opBond", `${qor(data.rollup.stakeAmount)} QOR`, "bond locked in the rollup"],

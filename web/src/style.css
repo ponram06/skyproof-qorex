@@ -354,3 +354,14 @@ tr.hit td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
 .inv-who span { color: var(--ink-2); }
 .form .or { align-self: center; padding-top: 18px; }
 @media (max-width: 640px) { .inv-who-grid { grid-template-columns: 1fr; } }
+
+/* claim form: flight finder */
+.match { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px 12px; margin: 0; display: grid; gap: 6px; }
+.match legend { font-size: 14px; font-weight: 600; padding: 0 4px; }
+.match legend .muted { font-weight: 400; font-size: 12.5px; }
+#cMatch { display: grid; gap: 6px; }
+.match-row { display: flex !important; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px; background: #f4f3ef; cursor: pointer; font-weight: 400 !important; }
+.match-row:has(input:checked) { background: #eef9d2; box-shadow: 0 0 0 1px #b9d86a inset; }
+.match-row .grow { display: grid; gap: 2px; min-width: 0; }
+.match-row.nr { background: transparent; border: 1px dashed var(--line-2); }
+.match-row input { flex: none; }
