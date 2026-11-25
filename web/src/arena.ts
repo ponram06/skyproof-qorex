@@ -844,7 +844,7 @@ export function mountArena(root: HTMLElement, recs: Rec[], permit: Permit, verdi
     const watchAccident = accident && camMode === "follow" && simT > dropAct!.t - 2500 && simT < HIT_AT + 4000;
     if (watchAccident) {
       const pp = atPad.position;
-      camera.position.lerp(new THREE.Vector3(pp.x + 16, pp.y + 14, pp.z + 16), 0.06);
+      camera.position.lerp(new THREE.Vector3(pp.x + 8, pp.y + 55, pp.z + 8), 0.06); // high above: no building in the way
       controls.target.lerp(new THREE.Vector3(pp.x, pp.y + 2, pp.z), 0.1);
     } else if (camMode === "follow") {
       if (vel.lengthSq() > 1e-4) heading.copy(vel).setY(0).normalize();
