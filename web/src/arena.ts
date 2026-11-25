@@ -202,9 +202,6 @@ export function mountArena(root: HTMLElement, recs: Rec[], permit: Permit, verdi
       <div class="arena-bar">
         <button class="arena-play">Pause</button>
         <input class="arena-time" type="range" min="0" max="1000" value="0" aria-label="Timeline" />
-        <div class="arena-seg" role="group" aria-label="Speed">
-          <button data-speed="8">Slow</button><button data-speed="20" class="on">Normal</button><button data-speed="45">Fast</button>
-        </div>
         <div class="arena-seg" role="group" aria-label="Camera">
           <button data-cam="follow" class="on">Follow drone</button><button data-cam="orbit">Free look</button><button data-cam="top">From above</button>
         </div>
@@ -435,7 +432,7 @@ export function mountArena(root: HTMLElement, recs: Rec[], permit: Permit, verdi
   padMesh(track[0].p, "H", "#b9f227");
   if (dropPad) padMesh(dropPad, "DROP", "#ff9f1c");
   const homeSign = sprite("HOME BASE", "#b9f227");
-  homeSign.position.set(track[0].p.x, 24, track[0].p.z);
+  homeSign.position.set(track[0].p.x - 14, 34, track[0].p.z - 14);
   homeSign.scale.set(13, 3.25, 1);
   scene.add(homeSign);
   if (dropPad) {
@@ -445,7 +442,7 @@ export function mountArena(root: HTMLElement, recs: Rec[], permit: Permit, verdi
     scene.add(dropSign);
   }
   const ceilSign = sprite(`${permit.maxAltM} m HEIGHT LIMIT`, "#b8a9ff");
-  ceilSign.position.set(track[0].p.x + 18, ceilY + 3, track[0].p.z);
+  ceilSign.position.set(R * 0.7, ceilY + 3, -R * 0.7); // out at the edge of the permit area
   ceilSign.scale.set(16, 4, 1);
   scene.add(ceilSign);
 
@@ -520,7 +517,7 @@ export function mountArena(root: HTMLElement, recs: Rec[], permit: Permit, verdi
   personSign.scale.set(12, 3, 1);
   personSign.visible = false;
   scene.add(personSign);
-  const hitSign = sprite("HIT BY THE PARCEL", "#ff6b5e");
+  const hitSign = sprite("INJURED: HIT BY THE PARCEL", "#ff6b5e");
   hitSign.scale.set(16, 4, 1);
   hitSign.visible = false;
   scene.add(hitSign);
@@ -562,7 +559,7 @@ export function mountArena(root: HTMLElement, recs: Rec[], permit: Permit, verdi
   // Gate decisions and breaches as timed events.
   const findings = new Map<number, typeof verdict.findings>();
   for (const f of verdict.findings) if (f.seq !== undefined) findings.set(f.seq, [...(findings.get(f.seq) ?? []), f]);
-  type Ev = { r: Rec; t: number; cap?: ReturnType<typeof caption>; beacon?: THREE.Object3D; bad: boolean; done: boolean };
+  type Ev = { r: Rec; t: number; cap?: ReturnType<typeof caption>; beacon?: THREE.Object3D; bad: boolean; done: boolean; hold?: number };
   const events: Ev[] = recs
     .filter((r) => r.k === "DECISION" || r.k === "ACTION" || findings.has(r.seq))
     .map((r) => {
@@ -579,6 +576,21 @@ export function mountArena(root: HTMLElement, recs: Rec[], permit: Permit, verdi
       }
       return ev;
     });
+  // An accident: the operator dropped while the person was still there. Show it slowly and hold on it.
+  const accident = !!dropAct && personLeaves === Infinity;
+  const HIT_AT = dropAct ? dropAct.t + 1500 : Infinity;
+  if (accident) {
+    for (const e of events) if (e.r === dropAct) e.hold = 0; // no pause yet: let the parcel fall
+    events.push({
+      r: { seq: -1, t: HIT_AT + 1100, k: "HIT" },
+      t: HIT_AT + 1100,
+      cap: { title: "The parcel hit the person below", body: "They were standing at the drop point, the safety check said \"No\", and the operator dropped anyway. The drone's signed record shows exactly this, so the victim is paid.", tone: "bad" },
+      bad: true,
+      done: false,
+      hold: 5000,
+    });
+    events.sort((a, b) => a.t - b.t);
+  }
 
   // ---- step list: every captioned moment, repeats folded into one row -----------------------
   type Step = { t: number; title: string; body: string; tone: string; n: number; evs: Ev[] };
@@ -642,7 +654,7 @@ export function mountArena(root: HTMLElement, recs: Rec[], permit: Permit, verdi
   // ---- controls -----------------------------------------------------------------------
   let simT = t0;
   let playing = opts.autoplay !== false;
-  let speed = 20;
+  const speed = 8; // slow enough to follow every step
   let flash = 0;
   /** Real-time moment until which playback holds still, so a broken rule can be read. */
   let holdUntil = 0;
@@ -667,12 +679,6 @@ export function mountArena(root: HTMLElement, recs: Rec[], permit: Permit, verdi
       seek(Math.max(t0, steps[Number(li.dataset.step)].t - 1500));
       playing = true;
       play.textContent = "Pause";
-    }),
-  );
-  root.querySelectorAll<HTMLButtonElement>("[data-speed]").forEach((b) =>
-    (b.onclick = () => {
-      speed = Number(b.dataset.speed);
-      root.querySelectorAll("[data-speed]").forEach((x) => x.classList.toggle("on", x === b));
     }),
   );
   root.querySelectorAll<HTMLButtonElement>("[data-cam]").forEach((b) =>
@@ -715,7 +721,8 @@ export function mountArena(root: HTMLElement, recs: Rec[], permit: Permit, verdi
       holdUntil = 0;
       q<HTMLElement>(".arena-cap-k").textContent = "Rule broken here. Playing on…";
     }
-    if (playing && now >= holdUntil) simT = Math.min(t1, simT + dt * 1000 * speed);
+    const slowmo = accident && simT > dropAct!.t - 2500 && simT < HIT_AT + 1500;
+    if (playing && now >= holdUntil) simT = Math.min(t1, simT + dt * 1000 * (slowmo ? 1 : speed));
     if (simT >= t1 && playing && now >= holdUntil && events.every((e) => e.done)) {
       playing = false;
       play.textContent = "Replay";
@@ -755,16 +762,21 @@ export function mountArena(root: HTMLElement, recs: Rec[], permit: Permit, verdi
     // Person below: ring + label while they stand there; hit if the parcel lands on them.
     if (dropPad) {
       const there = atPad.visible && simT < personLeaves;
-      padRing.visible = there;
+      const hit = accident && simT > HIT_AT;
+      const fall = hit ? Math.min(1, (simT - HIT_AT) / 900) : 0;
+      padRing.visible = there || hit;
       padRing.position.set(atPad.position.x, 0.5, atPad.position.z);
       (padRing.material as THREE.MeshBasicMaterial).opacity = 0.5 + 0.5 * Math.sin(now / 180);
-      const hit = !!dropped && dropAct !== undefined && personLeaves === Infinity && simT > dropAct.t + 1500;
       personSign.visible = there && !hit;
       personSign.position.set(atPad.position.x + 6, 10, atPad.position.z);
       hitSign.visible = hit;
       hitSign.position.set(atPad.position.x + 6, 10, atPad.position.z);
-      atPad.rotation.z = hit ? -Math.PI / 2 : 0;
-      atPad.position.y = hit ? 1.2 : 0.65;
+      atPad.rotation.z = (-Math.PI / 2) * fall;
+      atPad.position.y = 0.65 + 0.55 * fall;
+      if (hit) {
+        (padRing.material as THREE.MeshBasicMaterial).color.setHex(C.bad);
+        padRing.scale.setScalar(1.3 + 0.2 * Math.sin(now / 200));
+      }
     }
     // Wind: streaks and the windsock.
     const windNow = track[Math.min(i, track.length - 1)].wind;
@@ -810,13 +822,13 @@ export function mountArena(root: HTMLElement, recs: Rec[], permit: Permit, verdi
       e.done = true;
       if (e.beacon) e.beacon.visible = true;
       if (e.cap) {
-        setCaption(e.bad ? "Paused: this is the moment" : `${Math.round((e.t - t0) / 1000)} s into the flight`, e.cap.title, e.cap.body, e.cap.tone);
+        setCaption(e.bad && e.hold !== 0 ? "Paused: this is the moment" : `${Math.round((e.t - t0) / 1000)} s into the flight`, e.cap.title, e.cap.body, e.cap.tone);
         markStep(e);
       }
       if (e.bad) {
         flash = 1;
         opts.onBreach?.();
-        if (playing) holdUntil = now + 4000; // hold 4 s on the breach
+        if (playing) holdUntil = now + (e.hold ?? 4000); // hold on the breach
         break;
       }
     }
@@ -829,7 +841,12 @@ export function mountArena(root: HTMLElement, recs: Rec[], permit: Permit, verdi
     sun.position.set(drone.position.x + 60, 140, drone.position.z + 40);
     sun.target.position.copy(drone.position);
 
-    if (camMode === "follow") {
+    const watchAccident = accident && camMode === "follow" && simT > dropAct!.t - 2500 && simT < HIT_AT + 4000;
+    if (watchAccident) {
+      const pp = atPad.position;
+      camera.position.lerp(new THREE.Vector3(pp.x + 16, pp.y + 14, pp.z + 16), 0.06);
+      controls.target.lerp(new THREE.Vector3(pp.x, pp.y + 2, pp.z), 0.1);
+    } else if (camMode === "follow") {
       if (vel.lengthSq() > 1e-4) heading.copy(vel).setY(0).normalize();
       const want = drone.position.clone().add(heading.clone().multiplyScalar(-30)).add(new THREE.Vector3(10, 18, 10));
       want.y = Math.max(want.y, SKYLINE + 8); // stay above the rooftops so the drone is never hidden
