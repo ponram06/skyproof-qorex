@@ -67,30 +67,48 @@ function labelTexture(text: string, fg: string, bg: string, w = 256, h = 256, fo
   return t;
 }
 
-/** A QoreChain-style badge texture: name on a dark plate with a green accent. */
+/** The QoreX mark: a dark ring over offset teal and violet rings. */
+function qorexMark(g: CanvasRenderingContext2D, cx: number, cy: number, r: number) {
+  const ring = (x: number, y: number, rx: number, ry: number, rot: number, color: string, w: number) => {
+    g.beginPath();
+    g.ellipse(x, y, rx, ry, rot, 0, Math.PI * 2);
+    g.strokeStyle = color;
+    g.lineWidth = w;
+    g.stroke();
+  };
+  ring(cx + r * 0.12, cy - r * 0.08, r * 1.02, r * 0.9, -0.5, "rgba(122,108,255,0.7)", r * 0.42);
+  ring(cx - r * 0.1, cy + r * 0.1, r * 0.98, r * 0.92, 0.4, "rgba(64,214,214,0.75)", r * 0.42);
+  ring(cx, cy, r * 0.82, r * 0.82, 0, "#141420", r * 0.42);
+}
+
+/** A QoreX badge texture: the mark and a name on a light plate. */
 function brandTex(name: string, sub: string, aspect: number) {
   const c = document.createElement("canvas");
   c.height = 256;
   c.width = Math.round(256 * aspect);
   const g = c.getContext("2d")!;
-  g.fillStyle = "#0e1116";
+  g.fillStyle = "#f3effc";
   g.beginPath();
   g.roundRect(6, 6, c.width - 12, c.height - 12, 28);
   g.fill();
-  g.strokeStyle = "#3ddc84";
-  g.lineWidth = 10;
-  g.stroke();
-  g.fillStyle = "#3ddc84";
-  g.textAlign = "center";
-  g.textBaseline = "middle";
-  let size = 110;
-  g.font = `800 ${size}px Inter, system-ui, sans-serif`;
-  while (g.measureText(name).width > c.width - 50 && size > 20) g.font = `800 ${(size -= 4)}px Inter, system-ui, sans-serif`;
-  g.fillText(name, c.width / 2, sub ? c.height / 2 - 22 : c.height / 2);
-  if (sub) {
-    g.fillStyle = "#e8edf2";
-    g.font = "600 44px Inter, system-ui, sans-serif";
-    g.fillText(sub, c.width / 2, c.height / 2 + 62);
+  if (!name) {
+    qorexMark(g, c.width / 2, c.height / 2, Math.min(c.width, c.height) * 0.3);
+  } else {
+    const mr = c.height * 0.24;
+    qorexMark(g, mr + 40, c.height / 2, mr);
+    const x0 = mr * 2 + 70;
+    g.fillStyle = "#141420";
+    g.textAlign = "left";
+    g.textBaseline = "middle";
+    let size = 96;
+    g.font = `800 ${size}px Inter, system-ui, sans-serif`;
+    while (g.measureText(name).width > c.width - x0 - 24 && size > 20) g.font = `800 ${(size -= 4)}px Inter, system-ui, sans-serif`;
+    g.fillText(name, x0, sub ? c.height / 2 - 20 : c.height / 2);
+    if (sub) {
+      g.fillStyle = "#5a4fd6";
+      g.font = "600 38px Inter, system-ui, sans-serif";
+      g.fillText(sub, x0, c.height / 2 + 52);
+    }
   }
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
@@ -188,11 +206,11 @@ function quadcopter() {
   g.add(parcel, tape, tether);
   g.traverse((o) => ((o as THREE.Mesh).castShadow = true));
   // QoreChain branding: a decal on top of the body and on the parcel's sides
-  const top = new THREE.Mesh(new THREE.PlaneGeometry(3.0, 2.0), new THREE.MeshBasicMaterial({ map: brandTex("QORECHAIN", "quantum-safe", 3 / 2), transparent: true }));
+  const top = new THREE.Mesh(new THREE.PlaneGeometry(3.0, 2.0), new THREE.MeshBasicMaterial({ map: brandTex("QOREX", "quantum-safe", 3 / 2), transparent: true }));
   top.rotation.x = -Math.PI / 2;
   top.position.y = 0.46;
   g.add(top);
-  const sideTex = brandTex("QOR", "", 1.5 / 1.1);
+  const sideTex = brandTex("", "", 1.5 / 1.1);
   for (const [x, z, ry] of [[0, 0.77, 0], [0, -0.77, Math.PI], [0.77, 0, Math.PI / 2], [-0.77, 0, -Math.PI / 2]] as const) {
     const sd = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 0.8), new THREE.MeshBasicMaterial({ map: sideTex, transparent: true }));
     sd.position.set(x, -2.2, z);
