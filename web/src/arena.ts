@@ -81,21 +81,39 @@ function qorexMark(g: CanvasRenderingContext2D, cx: number, cy: number, r: numbe
   ring(cx, cy, r * 0.82, r * 0.82, 0, "#141420", r * 0.42);
 }
 
+/** The real QoreX logo, loaded once; until it arrives, the drawn mark stands in. */
+const logoImg = new Image();
+logoImg.src = "qorex-logo.jpg";
+const drawMark = (g: CanvasRenderingContext2D, cx: number, cy: number, r: number) => {
+  if (logoImg.complete && logoImg.naturalWidth) {
+    const s = r * 2.4;
+    g.save();
+    g.beginPath();
+    g.roundRect(cx - s / 2, cy - s / 2, s, s, s * 0.22);
+    g.clip();
+    g.drawImage(logoImg, cx - s / 2, cy - s / 2, s, s);
+    g.restore();
+  } else qorexMark(g, cx, cy, r);
+};
+
 /** A QoreX badge texture: the mark and a name on a light plate. */
 function brandTex(name: string, sub: string, aspect: number) {
   const c = document.createElement("canvas");
   c.height = 256;
   c.width = Math.round(256 * aspect);
   const g = c.getContext("2d")!;
+  const t = new THREE.CanvasTexture(c);
+  const paint = () => {
+  g.clearRect(0, 0, c.width, c.height);
   g.fillStyle = "#f3effc";
   g.beginPath();
   g.roundRect(6, 6, c.width - 12, c.height - 12, 28);
   g.fill();
   if (!name) {
-    qorexMark(g, c.width / 2, c.height / 2, Math.min(c.width, c.height) * 0.3);
+    drawMark(g, c.width / 2, c.height / 2, Math.min(c.width, c.height) * 0.34);
   } else {
     const mr = c.height * 0.24;
-    qorexMark(g, mr + 40, c.height / 2, mr);
+    drawMark(g, mr + 40, c.height / 2, mr);
     const x0 = mr * 2 + 70;
     g.fillStyle = "#141420";
     g.textAlign = "left";
@@ -110,7 +128,10 @@ function brandTex(name: string, sub: string, aspect: number) {
       g.fillText(sub, x0, c.height / 2 + 52);
     }
   }
-  const t = new THREE.CanvasTexture(c);
+  t.needsUpdate = true;
+  };
+  paint();
+  if (!logoImg.complete) logoImg.addEventListener("load", paint, { once: true });
   t.colorSpace = THREE.SRGBColorSpace;
   t.anisotropy = 4;
   return t;
