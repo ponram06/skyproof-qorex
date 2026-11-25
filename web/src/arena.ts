@@ -597,6 +597,45 @@ export function mountArena(root: HTMLElement, recs: Rec[], permit: Permit, verdi
     });
     events.sort((a, b) => a.t - b.t);
   }
+  // Too windy: the gust at the drop blows the parcel sideways onto a parked car.
+  const windAtDrop = dropAct ? track.reduce((m, s) => (Math.abs(s.t - dropAct.t) < 4000 ? Math.max(m, s.wind) : m), 0) : 0;
+  const windHit = !!dropPad && !!dropAct && !accident && windAtDrop > permit.maxWindMs;
+  const parked = new THREE.Group();
+  const carBody = new THREE.Mesh(new THREE.BoxGeometry(4.2, 1.2, 2), new THREE.MeshLambertMaterial({ color: 0x3a86ff }));
+  carBody.position.y = 0.9;
+  const carCab = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.9, 1.8), new THREE.MeshLambertMaterial({ color: 0x223040 }));
+  carCab.position.set(-0.2, 1.9, 0);
+  const hazards = [-1, 1].map((sd) => {
+    const l = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 0.5), new THREE.MeshBasicMaterial({ color: 0xffa500 }));
+    l.position.set(2.15, 1, sd * 0.7);
+    return l;
+  });
+  carBody.castShadow = carCab.castShadow = true;
+  parked.add(carBody, carCab, ...hazards);
+  parked.visible = windHit;
+  if (dropPad) parked.position.set(dropPad.x + 9, 0, dropPad.z + 4);
+  scene.add(parked);
+  const carRing = padRing.clone();
+  carRing.material = (padRing.material as THREE.MeshBasicMaterial).clone();
+  carRing.visible = false;
+  scene.add(carRing);
+  const carSign = sprite("CAR DAMAGED: PARCEL BLOWN ONTO IT", "#ff6b5e");
+  carSign.scale.set(4 * (carSign.scale.x / 8), 4, 1);
+  carSign.visible = false;
+  scene.add(carSign);
+  const CAR_AT = dropAct ? dropAct.t + 2500 : Infinity;
+  if (windHit) {
+    for (const e of events) if (e.r === dropAct) e.hold = 0;
+    events.push({
+      r: { seq: -1, t: CAR_AT + 1100, k: "HIT" },
+      t: CAR_AT + 1100,
+      cap: { title: "A gust blew the parcel onto a parked car", body: `The wind was ${windAtDrop.toFixed(1)} m/s, over the permit's ${permit.maxWindMs} m/s. The safety check said "No" to taking off and the operator flew anyway. The car's owner files a claim; the signed record proves the unsafe take-off, so they are paid.`, tone: "bad" },
+      bad: true,
+      done: false,
+      hold: 5000,
+    });
+    events.sort((a, b) => a.t - b.t);
+  }
 
   // ---- step list: every captioned moment, repeats folded into one row -----------------------
   type Step = { t: number; title: string; body: string; tone: string; n: number; evs: Ev[] };
@@ -727,7 +766,7 @@ export function mountArena(root: HTMLElement, recs: Rec[], permit: Permit, verdi
       holdUntil = 0;
       q<HTMLElement>(".arena-cap-k").textContent = "Rule broken here. Playing on…";
     }
-    const slowmo = accident && simT > dropAct!.t - 2500 && simT < HIT_AT + 1500;
+    const slowmo = (accident && simT > dropAct!.t - 2500 && simT < HIT_AT + 1500) || (windHit && simT > dropAct!.t - 2500 && simT < CAR_AT + 1500);
     if (playing && now >= holdUntil) simT = Math.min(t1, simT + dt * 1000 * (slowmo ? 1 : speed));
     if (simT >= t1 && playing && now >= holdUntil && events.every((e) => e.done)) {
       playing = false;
@@ -767,6 +806,27 @@ export function mountArena(root: HTMLElement, recs: Rec[], permit: Permit, verdi
       const k = Math.min(1, (simT - dropAct.t) / 2500);
       const from = at(dropAct.t).p;
       fallen.position.set(from.x, Math.max(1.2, (from.y + 1.6 - 2.7) * (1 - k * k) + 1.2 * k * k), from.z);
+      if (windHit) {
+        // blown sideways as it falls, landing on the car's roof
+        const kk = Math.min(1, (simT - dropAct.t) / (CAR_AT - dropAct.t));
+        const e = kk * kk;
+        fallen.position.set(from.x + (parked.position.x - from.x) * e, Math.max(2.9, (from.y + 1.6 - 2.7) * (1 - e) + 2.9 * e), from.z + (parked.position.z - from.z) * e);
+        fallen.rotation.set(kk * 5, kk * 3, kk * 4);
+      }
+    }
+    if (windHit) {
+      const smash = simT > CAR_AT;
+      carCab.scale.y = smash ? 0.45 : 1;
+      carCab.position.y = smash ? 1.7 : 1.9;
+      hazards.forEach((l) => (l.visible = smash && Math.sin(now / 150) > 0));
+      carSign.visible = smash;
+      carSign.position.set(parked.position.x, 9, parked.position.z + 6);
+      carRing.visible = smash;
+      if (smash) {
+        carRing.position.set(parked.position.x, 0.5, parked.position.z);
+        (carRing.material as THREE.MeshBasicMaterial).color.setHex(C.bad);
+        carRing.scale.setScalar(1.6 + 0.2 * Math.sin(now / 200));
+      }
     }
 
     // The person at the drop pad leaves when the gate clears.
@@ -861,9 +921,9 @@ export function mountArena(root: HTMLElement, recs: Rec[], permit: Permit, verdi
     sun.position.set(drone.position.x + 60, 140, drone.position.z + 40);
     sun.target.position.copy(drone.position);
 
-    const watchAccident = accident && camMode === "follow" && simT > dropAct!.t - 2500 && simT < HIT_AT + 4000;
+    const watchAccident = camMode === "follow" && ((accident && simT > dropAct!.t - 2500 && simT < HIT_AT + 4000) || (windHit && simT > dropAct!.t - 2500 && simT < CAR_AT + 4000));
     if (watchAccident) {
-      const pp = atPad.position;
+      const pp = windHit ? parked.position : atPad.position;
       camera.position.lerp(new THREE.Vector3(pp.x + 26, pp.y + 34, pp.z + 26), 0.06); // from the side and above: the drone doesn't cover the person
       controls.target.lerp(new THREE.Vector3(pp.x, pp.y + 2, pp.z), 0.1);
     } else if (camMode === "follow") {
