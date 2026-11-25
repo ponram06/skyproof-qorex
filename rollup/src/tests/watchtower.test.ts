@@ -258,3 +258,22 @@ test("the audit matches each pool payout to what was owed, and flags one that wa
   assert.ok(st.rows[0].reason.includes("B4_OVERRIDE"));
   assert.equal(st.owed.length, 0);
 });
+
+/* ---------- attacks (listed in docs/ATTACKS.md) ---------- */
+
+test("attack: filing the same claim twice, with two deposits, is paid once", () => {
+  const { st, payouts } = runNew([reg(), ...flightPosts(overrideFlight()), deposit(), newClaim(), deposit(), newClaim()]);
+  assert.equal(payouts.filter((p) => p.recipient === VICTIM).length, 1);
+  assert.equal(st.claims.filter((c) => c.status === "paid").length, 1);
+});
+
+test("attack: a paid claim is not paid again on the watchtower's next rounds", () => {
+  const { payouts } = runNew([reg(), ...flightPosts(overrideFlight()), deposit(), newClaim()], [], []);
+  assert.equal(payouts.length, 1);
+});
+
+test("attack: a second insurer decision cannot flip a rejected claim into a payout", () => {
+  const { st, payouts } = runNew([reg(), ...flightPosts(cleanFlight()), deposit(), newClaim()], [decision(false)], [decision(true)]);
+  assert.equal(payouts.length, 0);
+  assert.equal(st.claims[0].status, "rejected");
+});
