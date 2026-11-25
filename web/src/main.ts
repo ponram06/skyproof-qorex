@@ -26,6 +26,7 @@ interface Data {
   claimsPool?: { account: string; depositUqor: string; payoutUqor: string };
   insurer?: string;
   watchtower?: { batch: number; valid: boolean; note: string }[];
+  audit?: { checkedAt: string; batches: number; rows: { batch: number; recipient: string; amount: string; justified: boolean; reason: string }[]; owed: { recipient: string; amount: string; reason: string }[] };
 }
 
 interface Segment { header: SegmentHeader; signature: Uint8Array; batch: number; seq: number; sigOk: boolean; chainOk: boolean; sealed: boolean }
@@ -646,6 +647,8 @@ function proofPage() {
     <div class="card flush"><div class="scroll"><table class="table"><thead><tr><th>Withdrawal</th><th>Paid</th><th>To</th><th>From batch</th><th>Transaction</th></tr></thead>
       <tbody>${paid.map(({ i, tx, w }) => `<tr><td>#${esc(i)}</td><td><b>${w ? `${qor(w.amount)} QOR` : "—"}</b></td><td class="mono">${w ? esc(short(w.recipient)) : "—"}</td><td>${w ? `#${w.batch}` : "—"}</td><td class="mono" title="${esc(tx)}">${esc(short(tx, 10))}</td></tr>`).join("") || `<tr><td colspan="5" class="muted">None yet</td></tr>`}</tbody></table></div></div>
 
+    ${auditSection()}
+
     <h2 class="sub-h">Fraud caught</h2>
     <div class="card flush"><div class="scroll"><table class="table"><thead><tr><th>Batch</th><th>Penalty</th><th>Transaction</th></tr></thead>
       <tbody>${(data.fraud ?? []).map((f) => `<tr><td>#${esc(f.batch)}</td><td>${qor(f.slashed)} QOR slashed, ${qor(f.burned)} burned</td><td class="mono">${esc(short(f.tx, 12))}</td></tr>`).join("") || `<tr><td colspan="3" class="muted">None</td></tr>`}</tbody></table></div></div>
@@ -656,6 +659,29 @@ function proofPage() {
       <tbody>${data.posts.map((p) => `<tr><td>${p.seq}</td><td>${p.batch}</td><td>${esc(p.kind)}</td><td class="mono">${esc(p.detail)}</td></tr>`).join("")}</tbody>
     </table></div></details>
   </section>`;
+}
+
+/** "SKY-001-cheating-…: B4_OVERRIDE" → "Person below, operator dropped anyway: broke Respect a “No”". */
+function readableReason(r: string) {
+  const [id, ...rest] = r.split(": ");
+  const f = flights.find((x) => x.id === id);
+  const why = rest.join(": ");
+  const codes = why.split(", ").filter((c) => RULE[c]);
+  return `${f ? f.name : id}: ${codes.length ? `broke ${codes.map((c) => RULE[c]).join(", ")}` : why}`;
+}
+
+/** The independent payout audit: every coin out of the claims pool matched to what was owed. */
+function auditSection() {
+  const a = data.audit;
+  if (!a) return "";
+  const bad = a.rows.filter((r) => !r.justified);
+  return `<h2 class="sub-h">Independent payout audit</h2>
+    <div class="result ${bad.length ? "bad" : "ok"}"><span class="icon">${bad.length ? "✕" : "✓"}</span><div>
+      <b>${bad.length ? `${bad.length} payout(s) from the claims pool are NOT justified` : `All ${a.rows.length} payouts from the claims pool are justified`}</b>
+      <span>A separate program rebuilt everything from QoreChain on its own (${a.batches} batches, no saved state), worked out what the rules and the insurer allowed, and matched every real withdrawal from the pool against it. Checked ${esc(new Date(a.checkedAt).toLocaleString())}.</span></div></div>
+    <div class="card flush"><div class="scroll"><table class="table"><thead><tr><th>Batch</th><th>Paid</th><th>To</th><th>Owed because</th></tr></thead>
+      <tbody>${a.rows.map((r) => `<tr><td>#${r.batch}</td><td class="nowrap"><b>${qor(r.amount)} QOR</b></td><td class="mono nowrap">${esc(short(r.recipient))}</td><td>${r.justified ? "" : badge("bad", "Not justified")} ${esc(readableReason(r.reason))}</td></tr>`).join("")}</tbody></table></div></div>
+    <p class="muted note">Why this exists: only the watchtower holds the claims pool's key, and QoreChain's qledger accounts take a single key, so the chain would accept a payout the watchtower made up. This audit can't stop that, but it makes it public at once. Anyone can rerun it: <code>npm run audit</code> in <code>rollup/</code>.</p>`;
 }
 
 function proofReady() {

@@ -365,3 +365,5 @@ tr.hit td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
 .match-row .grow { display: grid; gap: 2px; min-width: 0; }
 .match-row.nr { background: transparent; border: 1px dashed var(--line-2); }
 .match-row input { flex: none; }
+
+.nowrap { white-space: nowrap; }

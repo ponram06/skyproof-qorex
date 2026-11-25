@@ -106,6 +106,8 @@ async function main() {
     watchtower: tower.log ?? [],
     withdrawalsExecuted: load("withdrawals", {}),
     fraud,
+    // The independent payout audit (npm run audit), if it has been run.
+    audit: load<unknown>("audit", undefined),
   };
   const dir = resolve(process.cwd(), "../web/public");
   mkdirSync(dir, { recursive: true });

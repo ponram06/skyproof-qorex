@@ -1,5 +1,5 @@
 {
- "generatedAt": "2026-11-25T06:20:44.029Z",
+ "generatedAt": "2026-11-25T08:23:16.439Z",
  "chainId": "qorechain-diana",
  "rollup": {
   "rollupId": "skyproof-1",
@@ -1008,5 +1008,48 @@
    "slashed": "1000000000uqor",
    "burned": "500000000uqor"
   }
- ]
+ ],
+ "audit": {
+  "checkedAt": "2026-11-25T08:21:54.921Z",
+  "batches": 8,
+  "rows": [
+   {
+    "nonce": "0",
+    "recipient": "qor1p8dfxg2mx5sah5mjh34yepunrtc50fp53tj35d",
+    "amount": "5000000",
+    "batch": 1,
+    "height": 10600508,
+    "justified": true,
+    "reason": "SKY-001-override-1795417202605: B4_OVERRIDE"
+   },
+   {
+    "nonce": "1",
+    "recipient": "qor1p8dfxg2mx5sah5mjh34yepunrtc50fp53tj35d",
+    "amount": "5000000",
+    "batch": 3,
+    "height": 10601568,
+    "justified": true,
+    "reason": "SKY-001-cheating-1795418690032: B4_OVERRIDE"
+   },
+   {
+    "nonce": "2",
+    "recipient": "qor1teh0d0m9p47mjfzvzjsmxnnssfve4n6eq052f8",
+    "amount": "6000000",
+    "batch": 6,
+    "height": 10687297,
+    "justified": true,
+    "reason": "SKY-001-cheating-1795418690032: B4_OVERRIDE"
+   },
+   {
+    "nonce": "3",
+    "recipient": "qor1teh0d0m9p47mjfzvzjsmxnnssfve4n6eq052f8",
+    "amount": "6000000",
+    "batch": 7,
+    "height": 10687372,
+    "justified": true,
+    "reason": "SKY-001-people_below-1795418572924: approved by the insurer (Photo matches the filing; the drone hovered low over the balcony at that time, so the downdraft damage is plausible.)"
+   }
+  ],
+  "owed": []
+ }
 }

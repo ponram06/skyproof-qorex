@@ -7,6 +7,7 @@ import { sealSegment } from "../flight/segment.js";
 import { executeBatch, QledgerLedger, withdrawTx } from "../ledger.js";
 import { hex } from "../util.js";
 import { CLAIM_DEPOSIT_UQOR, decide, DEPOSIT_REQUIRED_FROM, emptyState, judgeFlight, readPosts, RECORD_GRACE_BLOCKS } from "../watchtower.js";
+import { auditBatch, type AuditState } from "../audit.js";
 import { cleanFlight, DRONE, ENV, fixedRandom, INVESTIGATOR, PERMIT, RECIPIENTS } from "./fixtures.js";
 
 const CREATOR = "qor1crs332umw4zr9adcegafrc0yr8juke7t7rsre5";
@@ -206,4 +207,31 @@ test("malformed posts are ignored, not fatal", () => {
   const bad = (s: string): QledgerEntry => ({ height: H, poster: VICTIM, payload: new Uint8Array([...new TextEncoder().encode(s)]) });
   const { st } = runNew([bad("SKYC1{not json"), bad("SKYC1[1,2]"), bad('SKYC1{"note":"no flight"}'), bad("SKYI1null")]);
   assert.equal(st.claims.length, 0);
+});
+
+/* ---------- the payout audit ---------- */
+
+test("the audit matches each pool payout to what was owed, and flags one that wasn't", () => {
+  const P = qledgerKeypairFromSeed(new Uint8Array(32).fill(5));
+  const recs = cleanFlight();
+  (recs.find((r) => r.k === "DECISION" && r.req === "r2") as { ok: boolean }).ok = false;
+  const st: AuditState = { watch: emptyState(), owed: [], rows: [] };
+  const ctx = (now: number) => ({ creator: CREATOR, read: { poolAccount: hex(P.accountId) }, env: ENV, payoutUqor: 5n * QOR, now });
+  const judgeOne = (f: string) => judgeFlight(st.watch, f, ENV, member)?.verdict;
+  // Batch 0: the breached flight and its claim. Batch 1: the judge pays the victim and also pays itself.
+  auditBatch(st, [reg(), ...flightPosts(recs), claim()], 0, ctx(20), judgeOne);
+  assert.deepEqual(st.owed.map((o) => [o.recipient, o.amount]), [[VICTIM, (5n * QOR).toString()]]);
+  auditBatch(
+    st,
+    [
+      { height: 30, poster: "qor1judge", payload: withdrawTx(ENV, P, 0n, VICTIM, 5n * QOR) },
+      { height: 30, poster: "qor1judge", payload: withdrawTx(ENV, P, 1n, "qor1crs332umw4zr9adcegafrc0yr8juke7t7rsre5", 40n * QOR) },
+    ],
+    1,
+    ctx(30),
+    judgeOne,
+  );
+  assert.deepEqual(st.rows.map((r) => r.justified), [true, false]);
+  assert.ok(st.rows[0].reason.includes("B4_OVERRIDE"));
+  assert.equal(st.owed.length, 0);
 });

@@ -15,6 +15,7 @@
     "claim": "tsx src/cli/claim.ts",
     "batch": "tsx src/cli/submit-batch.ts",
     "watch": "tsx src/cli/watchtower.ts",
+    "audit": "tsx src/cli/audit.ts",
     "withdraw": "tsx src/cli/withdraw.ts",
     "receipt": "tsx src/cli/receipt.ts",
     "exit": "tsx src/cli/exit.ts",
