@@ -13,7 +13,7 @@ const UPSTREAM: Record<string, string> = {
   rpc: "https://rpc-testnet.qore.host",
 };
 const ALLOWED: Record<string, RegExp> = {
-  rest: /^\/(qorechain\/(rdk|pqc|multilayer)\/v1\/|cosmos\/(tx\/v1beta1\/txs\/|auth\/v1beta1\/accounts\/|bank\/v1beta1\/balances\/|upgrade\/v1beta1\/applied_plan\/|base\/tendermint\/v1beta1\/))/,
+  rest: /^\/(qorechain\/(rdk|pqc|multilayer)\/v1\/|cosmos\/(tx\/v1beta1\/txs(\/|$)|auth\/v1beta1\/accounts\/|bank\/v1beta1\/balances\/|upgrade\/v1beta1\/applied_plan\/|base\/tendermint\/v1beta1\/))/,
   rpc: /^\/(status|block)$/,
 };
 const POST_ALLOWED = /^\/cosmos\/tx\/v1beta1\/(simulate|txs)$/;

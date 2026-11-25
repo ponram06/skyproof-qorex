@@ -9,7 +9,7 @@ const { app } = require("@azure/functions");
 
 const UPSTREAM = { rest: "https://api-testnet.qore.host", rpc: "https://rpc-testnet.qore.host" };
 const ALLOWED = {
-  rest: /^\/(qorechain\/(rdk|pqc|multilayer)\/v1\/|cosmos\/(tx\/v1beta1\/txs\/|auth\/v1beta1\/accounts\/|bank\/v1beta1\/balances\/|upgrade\/v1beta1\/applied_plan\/|base\/tendermint\/v1beta1\/))/,
+  rest: /^\/(qorechain\/(rdk|pqc|multilayer)\/v1\/|cosmos\/(tx\/v1beta1\/txs(\/|$)|auth\/v1beta1\/accounts\/|bank\/v1beta1\/balances\/|upgrade\/v1beta1\/applied_plan\/|base\/tendermint\/v1beta1\/))/,
   rpc: /^\/(status|block)$/,
 };
 const POST_ALLOWED = /^\/cosmos\/tx\/v1beta1\/(simulate|txs)$/;

@@ -6,6 +6,7 @@ import { mountArena, type ArenaHandle, type Rec } from "./arena";
 import { simulate, SIM_SCENARIOS, type SimScenario } from "../../rollup/src/sim/sim";
 import { DEMO_PERMIT } from "../../rollup/src/flight/scenarios";
 import { judge, type Verdict } from "../../rollup/src/rules";
+import { parseClaim, type Claim } from "../../rollup/src/flight/posts";
 import { balanceUqor, CLAIM_FUNDS_QOR, createWallet, fileClaim, fileFingerprint, forgetWallet, keysFromFile, loadWallet, postDecision, restoreWallet, type ClaimWallet, type SigningKeys } from "./wallet";
 
 /* ================= data ================= */
@@ -350,6 +351,22 @@ function claimsPage() {
   </section>`;
 }
 
+/** Claims an address filed, read live from QoreChain (newest first): newer than this page's saved data. */
+async function liveClaimsOf(addr: string): Promise<(Claim & { txhash: string; height: number; time: string })[]> {
+  const q = encodeURIComponent(`message.sender='${addr}'`);
+  const r = await fetch(`/api/rest/cosmos/tx/v1beta1/txs?query=${q}&pagination.limit=50&order_by=ORDER_BY_DESC`).then((x) => x.json());
+  const out: (Claim & { txhash: string; height: number; time: string })[] = [];
+  for (const t of r.tx_responses ?? []) {
+    if (t.code !== 0) continue;
+    for (const m of t.tx?.body?.messages ?? []) {
+      if (!String(m["@type"]).endsWith("MsgPostRollupData") || m.rollup_id !== data.rollup.rollupId) continue;
+      const c = parseClaim(Uint8Array.from(atob(m.data), (ch) => ch.charCodeAt(0)));
+      if (c) out.push({ ...c, txhash: t.txhash, height: Number(t.height), time: t.timestamp });
+    }
+  }
+  return out;
+}
+
 let walletPoll: ReturnType<typeof setInterval> | undefined;
 
 function claimsReady() {
@@ -376,9 +393,28 @@ function claimsReady() {
     } catch {
       /* the balance is a nice-to-have */
     }
-    out.innerHTML = mine.length
-      ? `<p class="found ok">${mine.length} claim${mine.length > 1 ? "s" : ""} found: <b>${paid} paid</b>, ${mine.filter((c) => c.status === "review").length} with the insurer, ${mine.filter((c) => c.status === "rejected").length} rejected. They are highlighted below.${balance}</p>`
-      : `<p class="found">No judged claims for this address yet. A new claim shows here after the watchtower's next check.${balance}</p>`;
+    out.innerHTML = `<p class="found"><i class="spin inline"></i>Reading your claims from QoreChain…</p>`;
+    let fresh: Awaited<ReturnType<typeof liveClaimsOf>> = [];
+    let liveOk = true;
+    try {
+      fresh = (await liveClaimsOf(addr)).filter((l) => !mine.some((c) => c.flight === l.flight));
+    } catch {
+      liveOk = false;
+    }
+    const freshList = fresh.length
+      ? `<div class="scroll"><table class="table"><thead><tr><th>Just filed (live from QoreChain)</th><th>Status</th></tr></thead><tbody>${fresh
+          .map(
+            (l) => `<tr><td>“${esc(l.note)}”<span class="muted block">${claimFlight({ flight: l.flight, victim: addr, note: l.note, status: "open", ...(l.drone ? { drone: l.drone } : {}), ...(l.when ? { when: l.when } : {}) })} · block ${l.height.toLocaleString()} · ${esc(new Date(l.time).toLocaleString())}</span></td>
+          <td>${badge("warn", "Received · waiting for the watchtower")}<span class="muted block">It judges claims once they are in a settled batch.</span></td></tr>`,
+          )
+          .join("")}</tbody></table></div>`
+      : "";
+    out.innerHTML =
+      (mine.length || fresh.length
+        ? `<p class="found ok">${mine.length + fresh.length} claim${mine.length + fresh.length > 1 ? "s" : ""} found: <b>${paid} paid</b>, ${mine.filter((c) => c.status === "review").length} with the insurer, ${mine.filter((c) => c.status === "rejected").length} rejected${fresh.length ? `, <b>${fresh.length} just filed</b>` : ""}.${mine.length ? " Judged ones are highlighted below." : ""}${balance}</p>`
+        : `<p class="found">No claims from this address on QoreChain.${balance}</p>`) +
+      freshList +
+      (liveOk ? "" : `<p class="muted tiny">Couldn't reach QoreChain for claims filed since this page's data was saved.</p>`);
   });
 }
 
