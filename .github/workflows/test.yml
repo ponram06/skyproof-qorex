@@ -1,0 +1,22 @@
+# Runs on every push: the rollup's unit tests (rules, ledger, sealed segments,
+# simulator, watchtower, attacks) and a type check of the rollup and the website.
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Rollup tests
+        working-directory: rollup
+        run: npm ci && npm run typecheck && npm test
+      - name: Website type check and build
+        working-directory: web
+        run: npm ci && npx tsc --noEmit && npx vite build
