@@ -67,6 +67,37 @@ function labelTexture(text: string, fg: string, bg: string, w = 256, h = 256, fo
   return t;
 }
 
+/** A QoreChain-style badge texture: name on a dark plate with a green accent. */
+function brandTex(name: string, sub: string, aspect: number) {
+  const c = document.createElement("canvas");
+  c.height = 256;
+  c.width = Math.round(256 * aspect);
+  const g = c.getContext("2d")!;
+  g.fillStyle = "#0e1116";
+  g.beginPath();
+  g.roundRect(6, 6, c.width - 12, c.height - 12, 28);
+  g.fill();
+  g.strokeStyle = "#3ddc84";
+  g.lineWidth = 10;
+  g.stroke();
+  g.fillStyle = "#3ddc84";
+  g.textAlign = "center";
+  g.textBaseline = "middle";
+  let size = 110;
+  g.font = `800 ${size}px Inter, system-ui, sans-serif`;
+  while (g.measureText(name).width > c.width - 50 && size > 20) g.font = `800 ${(size -= 4)}px Inter, system-ui, sans-serif`;
+  g.fillText(name, c.width / 2, sub ? c.height / 2 - 22 : c.height / 2);
+  if (sub) {
+    g.fillStyle = "#e8edf2";
+    g.font = "600 44px Inter, system-ui, sans-serif";
+    g.fillText(sub, c.width / 2, c.height / 2 + 62);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  return t;
+}
+
 function sprite(text: string, color: string) {
   const c = document.createElement("canvas");
   const font = "700 52px ui-monospace, Menlo, Consolas, monospace";
@@ -156,6 +187,19 @@ function quadcopter() {
   tether.position.set(0, -1.1, 0);
   g.add(parcel, tape, tether);
   g.traverse((o) => ((o as THREE.Mesh).castShadow = true));
+  // QoreChain branding: a decal on top of the body and on the parcel's sides
+  const top = new THREE.Mesh(new THREE.PlaneGeometry(3.0, 2.0), new THREE.MeshBasicMaterial({ map: brandTex("QORECHAIN", "quantum-safe", 3 / 2), transparent: true }));
+  top.rotation.x = -Math.PI / 2;
+  top.position.y = 0.46;
+  g.add(top);
+  const sideTex = brandTex("QOR", "", 1.5 / 1.1);
+  for (const [x, z, ry] of [[0, 0.77, 0], [0, -0.77, Math.PI], [0.77, 0, Math.PI / 2], [-0.77, 0, -Math.PI / 2]] as const) {
+    const sd = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 0.8), new THREE.MeshBasicMaterial({ map: sideTex, transparent: true }));
+    sd.position.set(x, -2.2, z);
+    sd.rotation.y = ry;
+    parcel.add(sd);
+    sd.position.sub(parcel.position);
+  }
   return { group: g, props, parcel: [parcel, tape, tether] as THREE.Mesh[], body };
 }
 
