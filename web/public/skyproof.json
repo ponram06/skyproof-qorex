@@ -1,5 +1,5 @@
 {
- "generatedAt": "2026-11-25T11:27:44.370Z",
+ "generatedAt": "2026-11-25T12:07:59.448Z",
  "chainId": "qorechain-diana",
  "rollup": {
   "rollupId": "skyproof-1",
@@ -23,7 +23,7 @@
   "privacy": "",
   "members": [],
   "membersEpoch": 0,
-  "depositPool": "31000000"
+  "depositPool": "25000000"
  },
  "drones": {
   "SKY-001": {
@@ -249,27 +249,27 @@
   },
   {
    "index": 9,
-   "status": "submitted",
+   "status": "finalized",
    "inboxStart": 64,
    "inboxEnd": 65,
    "txCount": 1,
    "stateRoot": "97ec93a273d298f6cb4995670ad2ac597d85530ba5698a60a4bc684c83d8bdb2",
    "withdrawalsRoot": "",
    "submittedTime": 1795604642,
-   "finalizedAt": 0,
+   "finalizedAt": 10726707,
    "tx": "90DC0B12A94412BC2B1CCC1EE1E865DC8D386308BEE0F356E319ED1DF793C244",
    "withdrawals": []
   },
   {
    "index": 10,
-   "status": "submitted",
+   "status": "finalized",
    "inboxStart": 65,
    "inboxEnd": 66,
    "txCount": 1,
    "stateRoot": "ec6b7792b2a0134ac20196cab5c7aee4327027297a91cf8bda176b1e3a111517",
    "withdrawalsRoot": "d98fe712a3ffdafb36332dada8f09e2207e7a0616e3648fccaf71d15b1b66b83",
    "submittedTime": 1795604669,
-   "finalizedAt": 0,
+   "finalizedAt": 10726726,
    "tx": "C964F0073F93CC20BF696B4F081B18C29D96D30F48F4812AEC460F9B8248E81D",
    "withdrawals": [
     {
@@ -1513,7 +1513,8 @@
   "0": "2C6A0DDBC423727AEA71D1315E99D01CB7CABD1D46674119CDC0F80856767FB2",
   "1": "B3DDADBFFAE7E44F612C8AB6666ADAF8E4FA75B9DB5F19B0BB5CC1BF51BE7CF6",
   "2": "B61423716B29A4F88A65F470F72BBE96FC69E35540280F7BB2E62DC4C98C76C8",
-  "3": "29DA803EF3C78E0CC37E452AC891321C83451BCD553A229A97E5D20DA1D33A4B"
+  "3": "29DA803EF3C78E0CC37E452AC891321C83451BCD553A229A97E5D20DA1D33A4B",
+  "4": "5BD4EAA2F8A510240B3F39113838E50CF70EB5E46759600307B6E515BDFC023F"
  },
  "fraud": [
   {
@@ -1526,8 +1527,8 @@
   }
  ],
  "audit": {
-  "checkedAt": "2026-11-25T08:21:54.921Z",
-  "batches": 8,
+  "checkedAt": "2026-11-25T12:07:20.055Z",
+  "batches": 12,
   "rows": [
    {
     "nonce": "0",
@@ -1564,6 +1565,15 @@
     "height": 10687372,
     "justified": true,
     "reason": "SKY-001-people_below-1795418572924: approved by the insurer (Photo matches the filing; the drone hovered low over the balcony at that time, so the downdraft damage is plausible.)"
+   },
+   {
+    "nonce": "4",
+    "recipient": "qor1teh0d0m9p47mjfzvzjsmxnnssfve4n6eq052f8",
+    "amount": "6000000",
+    "batch": 10,
+    "height": 10724190,
+    "justified": true,
+    "reason": "SKY-001@2026-11-25T13:58: approved by the insurer (Drone SKY-001 was named and the operator published no record for that time; with no record to show otherwise, the claim is approved.)"
    }
   ],
   "owed": []
