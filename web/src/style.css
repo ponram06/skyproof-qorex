@@ -369,3 +369,30 @@ tr.hit td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
 .nowrap { white-space: nowrap; }
 
 .hero .stats { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); max-width: 1000px; }
+
+/* arena: 3D view and the step list side by side */
+.arena { display: grid; grid-template-columns: minmax(0, 1fr) 320px; background: var(--surface); }
+.arena-main { position: relative; min-width: 0; }
+.arena-side { border-left: 1px solid var(--line); display: flex; flex-direction: column; min-width: 0; background: #fbfaf7; }
+.arena-side .arena-steps { flex: 1; overflow-y: auto; padding-top: 4px; }
+.arena-side .arena-legend { border-top: 1px solid var(--line); padding: 10px 12px; font-size: 12px; display: grid; gap: 4px; }
+.arena-side .arena-steps li { grid-template-columns: 40px 1fr; }
+.arena.compact { grid-template-columns: minmax(0, 1fr) 280px; }
+@media (max-width: 980px) {
+  .arena, .arena.compact { grid-template-columns: 1fr; }
+  .arena-side { border-left: 0; border-top: 1px solid var(--line); }
+  .arena-side .arena-steps { max-height: 260px !important; }
+}
+
+/* Try it: scenarios in a row above, 3D + steps get the full width */
+.demo { grid-template-columns: 1fr; }
+.picker { grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 4px; }
+.picker button { padding: 8px 8px 8px 24px; }
+.picker button b { font-size: 13.5px; line-height: 1.25; }
+.picker button span { font-size: 12px; }
+@media (max-width: 980px) { .picker { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.picker button::before { left: 10px; top: 14px; }
+
+.arena { align-items: start; }
+.arena-side { overflow: hidden; }
+.arena-side .arena-steps { max-height: none; min-height: 0; }

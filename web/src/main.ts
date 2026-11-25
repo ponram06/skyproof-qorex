@@ -3,7 +3,7 @@ import { buildSettlementReceipt, createRdkClient, verifySettlementReceipt } from
 import { parseHeaderPost, verifyHeader, type SegmentHeader } from "./verify";
 import { drawFlight, openFlight, type InvestigatorData } from "./investigator";
 import { mountArena, type ArenaHandle, type Rec } from "./arena";
-import { simulate, SIM_SCENARIOS, type SimScenario } from "../../rollup/src/sim/sim";
+import { DEMO_WORLD, simulate, SIM_SCENARIOS, type SimScenario, type World } from "../../rollup/src/sim/sim";
 import { DEMO_PERMIT } from "../../rollup/src/flight/scenarios";
 import { judge, type Verdict } from "../../rollup/src/rules";
 import { parseClaim, type Claim } from "../../rollup/src/flight/posts";
@@ -45,6 +45,18 @@ const SCENARIO: Record<SimScenario, { name: string; hint: string; about: string 
   wind: { name: "Too windy", hint: "Breaks a rule", about: "The safety check says it's too windy. The operator takes off anyway." },
 };
 const SAFE: SimScenario[] = ["normal", "people_below", "link_lost"];
+/** Try-it: each scenario delivers to its own address (metres east, north of home base; the no-fly zone is 1.55 km north). */
+const L = (x: number, y: number): World => ({ home: [0, 0], drop: [x, y], route: [[x, 0], [x, y]], shortcut: [[x, y]] });
+const TRY_WORLDS: Record<SimScenario, World> = {
+  normal: L(1300, 700),
+  people_below: L(-1200, 800),
+  link_lost: { home: [0, 0], drop: [1200, -1300], route: [[600, -400], [1200, -900], [1200, -1300]], shortcut: [[1200, -1300]] },
+  cheating: L(-700, 1300),
+  unapproved: L(300, -1400),
+  shortcut: DEMO_WORLD,
+  altitude: L(1000, 1200),
+  wind: L(-1300, -900),
+};
 const RULES: [string, string][] = [
   ["B1_GEOFENCE", "Stay in the allowed area"],
   ["B2_ALTITUDE", "Stay under 120 m"],
@@ -227,7 +239,7 @@ function homeReady() {
   $$<HTMLButtonElement>("[data-scroll]").forEach((b) => (b.onclick = () => document.getElementById(b.dataset.scroll!)?.scrollIntoView({ behavior: "smooth" })));
   const fly = (s: SimScenario) => {
     $$<HTMLButtonElement>(".picker button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.s === s)));
-    const recs = simulate({ scenario: s, flight: `demo-${s}`, drone: "SKY-001", permit: DEMO_PERMIT, permitHash: "demo", seed: 7 + SIM_SCENARIOS.indexOf(s) });
+    const recs = simulate({ scenario: s, flight: `demo-${s}`, drone: "SKY-001", permit: DEMO_PERMIT, permitHash: "demo", seed: 7 + SIM_SCENARIOS.indexOf(s), world: TRY_WORLDS[s] });
     const verdict = judge(recs, DEMO_PERMIT);
     let shown = false;
     const reveal = () => {
@@ -244,7 +256,7 @@ function homeReady() {
     $("#skip").onclick = reveal;
     $("#ruleList").innerHTML = ruleList([]).replace(/✓/g, "·");
     disposeArenas();
-    arenas.push(mountArena($("#simView"), recs as Rec[], DEMO_PERMIT, verdict, { autoplay: true, onBreach: reveal, onEnd: reveal }));
+    arenas.push(mountArena($("#simView"), recs as Rec[], DEMO_PERMIT, verdict, { autoplay: true, seed: SIM_SCENARIOS.indexOf(s) + 1, onBreach: reveal, onEnd: reveal }));
   };
   $$<HTMLButtonElement>(".picker button").forEach((b) => (b.onclick = () => fly(b.dataset.s as SimScenario)));
   fly("people_below");

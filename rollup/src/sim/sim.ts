@@ -8,7 +8,7 @@
  *
  *   normal        clean delivery
  *   people_below  a person stands at the drop point: DENY, hover, retry, drop when clear
- *   link_lost     the gate stops answering: no approval is invented, the drone safe-stops
+ *   link_lost     the gate stops answering on the way out: no approval is invented, the drone safe-stops where it is
  *   cheating      a person is at the drop point; the operator drops on the DENY → B4
  *   unapproved    the operator drops without asking at all                    → B3
  *   shortcut      the operator flies straight across the no-fly zone          → B1
@@ -81,7 +81,7 @@ export function simulate(o: SimOptions): FlightRecord[] {
   let alt = 0;
   const baseWind = o.scenario === "wind" ? 15 : 4;
   const wind = () => Math.round((baseWind + rand() * 2) * 10) / 10;
-  const gate: GateState = { used: new Set(), answering: o.scenario !== "link_lost" };
+  const gate: GateState = { used: new Set(), answering: true };
   // people_below: the person walks away after the 2nd DENY. cheating: they stay, and the operator drops on them anyway.
   let personAtDropUntil = o.scenario === "people_below" || o.scenario === "cheating" ? Infinity : -Infinity;
 
@@ -138,7 +138,12 @@ export function simulate(o: SimOptions): FlightRecord[] {
 
   // Outbound.
   const cruise = o.scenario === "altitude" ? 140 : CRUISE;
-  for (const wp of o.scenario === "shortcut" ? w.shortcut : w.route) fly(wp, cruise);
+  const out = o.scenario === "shortcut" ? w.shortcut : w.route;
+  for (const [i, wp] of out.entries()) {
+    // link_lost: the safety link drops halfway out; from then on nothing answers.
+    if (o.scenario === "link_lost" && i === Math.floor(out.length / 2)) gate.answering = false;
+    fly(wp, cruise);
+  }
 
   // Drop.
   if (o.scenario === "unapproved") act("no-request", "DROP");

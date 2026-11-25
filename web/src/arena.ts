@@ -193,8 +193,9 @@ function caption(r: Rec, finding?: { rule: string; detail: string } | { rule: st
   return undefined;
 }
 
-export function mountArena(root: HTMLElement, recs: Rec[], permit: Permit, verdict: Verdict, opts: { autoplay?: boolean; compact?: boolean; onBreach?: () => void; onEnd?: () => void } = {}): ArenaHandle {
+export function mountArena(root: HTMLElement, recs: Rec[], permit: Permit, verdict: Verdict, opts: { autoplay?: boolean; compact?: boolean; seed?: number; onBreach?: () => void; onEnd?: () => void } = {}): ArenaHandle {
   root.innerHTML = `<div class="arena ${opts.compact ? "compact" : ""}">
+     <div class="arena-main">
       <div class="arena-view"></div>
       <div class="arena-caption"><div class="arena-cap-k">Ready</div><div class="arena-cap-t">Press play</div><div class="arena-cap-b"></div></div>
       <div class="arena-hud"><span class="arena-clock">Time 0 s</span><span class="arena-alt">Height 0 m</span><span class="arena-wind">Wind 0 m/s</span></div>
@@ -208,14 +209,17 @@ export function mountArena(root: HTMLElement, recs: Rec[], permit: Permit, verdi
           <button data-cam="follow" class="on">Follow drone</button><button data-cam="orbit">Free look</button><button data-cam="top">From above</button>
         </div>
       </div>
+     </div>
+     <div class="arena-side">
+      <div class="arena-steps-h">What happens, step by step <span>(click one to jump there)</span></div>
+      <ol class="arena-steps"></ol>
       <div class="arena-legend">
         <span><i style="background:#2fbf71"></i>Green beam: safety check said <b>Yes</b></span>
         <span><i style="background:#ff9f1c"></i>Orange beam: safety check said <b>No</b></span>
         <span><i style="background:#ff3b30"></i>Red beam: <b>a rule was broken here</b></span>
         <span><i style="background:#6d4cff"></i>Purple: the drone's route and allowed area</span>
       </div>
-      <div class="arena-steps-h">What happens, step by step <span>(click a step to jump to it)</span></div>
-      <ol class="arena-steps"></ol>
+     </div>
     </div>`;
   const q = <T extends Element>(s: string) => root.querySelector<T>(s)!;
   const view = q<HTMLElement>(".arena-view");
@@ -276,7 +280,7 @@ export function mountArena(root: HTMLElement, recs: Rec[], permit: Permit, verdi
   scene.add(ground);
 
   // City grid: roads every BLOCK units, blocks filled with buildings or parks.
-  const rand = rng(20261123);
+  const rand = rng(20261123 + (opts.seed ?? 0) * 7919);
   const BLOCK = 46;
   const ROAD = 9;
   const pathPts = track.map((s) => s.p);
@@ -430,6 +434,50 @@ export function mountArena(root: HTMLElement, recs: Rec[], permit: Permit, verdi
   };
   padMesh(track[0].p, "H", "#b9f227");
   if (dropPad) padMesh(dropPad, "DROP", "#ff9f1c");
+  const homeSign = sprite("HOME BASE", "#b9f227");
+  homeSign.position.set(track[0].p.x, 24, track[0].p.z);
+  homeSign.scale.set(13, 3.25, 1);
+  scene.add(homeSign);
+  if (dropPad) {
+    const dropSign = sprite("DELIVERY ADDRESS", "#ffb44d");
+    dropSign.position.set(dropPad.x - 8, 26, dropPad.z);
+    dropSign.scale.set(15, 3.75, 1);
+    scene.add(dropSign);
+  }
+  const ceilSign = sprite(`${permit.maxAltM} m HEIGHT LIMIT`, "#b8a9ff");
+  ceilSign.position.set(track[0].p.x + 18, ceilY + 3, track[0].p.z);
+  ceilSign.scale.set(16, 4, 1);
+  scene.add(ceilSign);
+
+  // Windsock at home base: leans with the wind.
+  const sockPole = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 7, 6), new THREE.MeshLambertMaterial({ color: 0xdddddd }));
+  sockPole.position.set(track[0].p.x - 7, 3.5, track[0].p.z - 7);
+  const sock = new THREE.Mesh(new THREE.ConeGeometry(0.8, 4, 12, 1, true), new THREE.MeshLambertMaterial({ color: 0xff6a00, side: THREE.DoubleSide }));
+  sock.geometry.translate(0, -2, 0);
+  sock.position.set(track[0].p.x - 7, 6.8, track[0].p.z - 7);
+  scene.add(sockPole, sock);
+
+  // The safety link: a line from the drone to home base (green while the safety check answers).
+  const linkGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
+  const linkMat = new THREE.LineDashedMaterial({ color: C.ok, dashSize: 2, gapSize: 1.2, transparent: true, opacity: 0.8 });
+  const link = new THREE.Line(linkGeo, linkMat);
+  scene.add(link);
+  const linkLostAt = recs.find((r) => r.k === "ACTION" && r.act === "SAFE_STOP")?.t;
+  const lostSign = sprite("SIGNAL LOST", "#ff6b5e");
+  lostSign.scale.set(13, 3.25, 1);
+  lostSign.visible = false;
+  scene.add(lostSign);
+
+  // Wind streaks, shown when the wind is over the permit's limit.
+  const streaks: THREE.Mesh[] = [];
+  const streakMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.55, depthWrite: false });
+  for (let i = 0; i < 70; i++) {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(6 + rand() * 6, 0.12, 0.12), streakMat);
+    m.userData = { ox: (rand() - 0.5) * 120, oy: 2 + rand() * 40, oz: (rand() - 0.5) * 120, v: 30 + rand() * 30 };
+    m.visible = false;
+    scene.add(m);
+    streaks.push(m);
+  }
 
   // The route, drawn ahead of the drone as a faint line and behind it as a bright trail.
   const routeLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pathPts), new THREE.LineDashedMaterial({ color: C.violet, dashSize: 3, gapSize: 2, transparent: true, opacity: 0.55 }));
@@ -460,10 +508,56 @@ export function mountArena(root: HTMLElement, recs: Rec[], permit: Permit, verdi
     return { p, c, a: rand() * Math.PI * 2, r: 6 + rand() * 8, w: 0.15 + rand() * 0.2 };
   });
   const atPad = person(0xff9f1c);
-  atPad.scale.setScalar(1.2);
-  if (dropPad) atPad.position.set(dropPad.x + 2.5, 0.65, dropPad.z + 1.5);
+  atPad.scale.setScalar(2.3);
+  if (dropPad) atPad.position.set(dropPad.x + 1.5, 0.65, dropPad.z + 1);
   atPad.visible = false;
   scene.add(atPad);
+  const padRing = new THREE.Mesh(new THREE.RingGeometry(3.2, 4.2, 40), new THREE.MeshBasicMaterial({ color: C.bad, side: THREE.DoubleSide, transparent: true }));
+  padRing.rotation.x = -Math.PI / 2;
+  padRing.visible = false;
+  scene.add(padRing);
+  const personSign = sprite("PERSON BELOW", "#ffb44d");
+  personSign.scale.set(12, 3, 1);
+  personSign.visible = false;
+  scene.add(personSign);
+  const hitSign = sprite("HIT BY THE PARCEL", "#ff6b5e");
+  hitSign.scale.set(16, 4, 1);
+  hitSign.visible = false;
+  scene.add(hitSign);
+
+  // Pedestrians along the route, on the pavement either side.
+  for (let i = 3; i < track.length; i += 4) {
+    const p = track[i].p;
+    const side = i % 8 < 4 ? 1 : -1;
+    const w = person([0x3a6df0, 0xe0533d, 0x2fbf71, 0x8e44ad, 0xf2b134][i % 5]);
+    w.scale.setScalar(1.6);
+    scene.add(w);
+    walkers.push({ p: w, c: new THREE.Vector3(p.x + side * (9 + rand() * 4), 0, p.z + (rand() - 0.5) * 6), a: rand() * Math.PI * 2, r: 2 + rand() * 3, w: 0.25 + rand() * 0.25 });
+  }
+
+  // Cars driving on the roads near the route.
+  const cars: { g: THREE.Group; along: "x" | "z"; v: number; u: number; s: number }[] = [];
+  const carColors = [0xd7263d, 0x1b998b, 0xf46036, 0x2e294e, 0xe2e2e2, 0x3a86ff];
+  const roadsNear = new Set<string>();
+  for (const p of pathPts) {
+    const vx = Math.round((p.x + span) / BLOCK) * BLOCK - span;
+    const vz = Math.round((p.z + span) / BLOCK) * BLOCK - span;
+    roadsNear.add(`z:${vx}`);
+    roadsNear.add(`x:${vz}`);
+  }
+  [...roadsNear].slice(0, 12).forEach((key, i) => {
+    const [along, v] = key.split(":");
+    const g = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.BoxGeometry(4.2, 1.2, 2), new THREE.MeshLambertMaterial({ color: carColors[i % carColors.length] }));
+    body.position.y = 0.9;
+    const cab = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.9, 1.8), new THREE.MeshLambertMaterial({ color: 0x223040 }));
+    cab.position.set(-0.2, 1.9, 0);
+    body.castShadow = cab.castShadow = true;
+    g.add(body, cab);
+    if (along === "z") g.rotation.y = Math.PI / 2;
+    scene.add(g);
+    cars.push({ g, along: along as "x" | "z", v: Number(v) + (i % 2 ? 2 : -2), u: (rand() - 0.5) * span * 2, s: (i % 2 ? 1 : -1) * (6 + rand() * 6) });
+  });
 
   // Gate decisions and breaches as timed events.
   const findings = new Map<number, typeof verdict.findings>();
@@ -531,6 +625,12 @@ export function mountArena(root: HTMLElement, recs: Rec[], permit: Permit, verdi
     const w = view.clientWidth || 800;
     const h = opts.compact ? Math.max(300, Math.round(w * 0.62)) : Math.max(360, Math.min(640, Math.round(w * 0.52)));
     renderer.setSize(w, h);
+    // The step panel is exactly as tall as the 3D view and its controls (beside it on wide screens).
+    requestAnimationFrame(() => {
+      const side = root.querySelector<HTMLElement>(".arena-side");
+      const main = root.querySelector<HTMLElement>(".arena-main");
+      if (side && main) side.style.height = matchMedia("(max-width: 980px)").matches ? "" : `${main.offsetHeight}px`;
+    });
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
   };
@@ -549,7 +649,9 @@ export function mountArena(root: HTMLElement, recs: Rec[], permit: Permit, verdi
   const allBroke = [...new Set(verdict.findings.map((f) => BROKE[f.rule] ?? f.rule))];
   const summary = verdict.breach
     ? { title: "Flight over: a rule was broken", body: `The operator ${firstBad ? allBroke.join(" and ") : "broke a safety rule"}. The signed record proves it, so the victim is paid from the operator's deposit.`, tone: "bad" }
-    : { title: "Flight over: every rule followed", body: "The drone asked before every risky move and obeyed every answer. Nothing to pay.", tone: "ok" };
+    : recs.some((r) => r.k === "ACTION" && r.act === "SAFE_STOP")
+      ? { title: "Flight over: signal lost, landed safely", body: "With no answer from its safety check, the drone didn't guess or drop the parcel. It landed where it was. No rule broken, nothing to pay.", tone: "ok" }
+      : { title: "Flight over: every rule followed", body: "The drone asked before every risky move and obeyed every answer. Nothing to pay.", tone: "ok" };
   const play = q<HTMLButtonElement>(".arena-play");
   const slider = q<HTMLInputElement>(".arena-time");
   play.textContent = playing ? "Pause" : "Play";
@@ -648,6 +750,52 @@ export function mountArena(root: HTMLElement, recs: Rec[], permit: Permit, verdi
         atPad.position.set(dropPad.x + 2.5 + k * 22, 0.65, dropPad.z + 1.5 + k * 8);
         atPad.rotation.y = -Math.PI / 2.5;
       }
+    }
+    // Person below: ring + label while they stand there; hit if the parcel lands on them.
+    if (dropPad) {
+      const there = atPad.visible && simT < personLeaves;
+      padRing.visible = there;
+      padRing.position.set(atPad.position.x, 0.5, atPad.position.z);
+      (padRing.material as THREE.MeshBasicMaterial).opacity = 0.5 + 0.5 * Math.sin(now / 180);
+      const hit = !!dropped && dropAct !== undefined && personLeaves === Infinity && simT > dropAct.t + 1500;
+      personSign.visible = there && !hit;
+      personSign.position.set(atPad.position.x + 6, 10, atPad.position.z);
+      hitSign.visible = hit;
+      hitSign.position.set(atPad.position.x + 6, 10, atPad.position.z);
+      atPad.rotation.z = hit ? -Math.PI / 2 : 0;
+      atPad.position.y = hit ? 1.2 : 0.65;
+    }
+    // Wind: streaks and the windsock.
+    const windNow = track[Math.min(i, track.length - 1)].wind;
+    const gusty = windNow > permit.maxWindMs;
+    sock.rotation.z = -Math.min(1, windNow / 15) * (Math.PI / 2.2) + Math.sin(now / 300) * 0.05 * windNow / 10;
+    for (const m of streaks) {
+      m.visible = gusty;
+      if (!gusty) continue;
+      const d = m.userData as { ox: number; oy: number; oz: number; v: number };
+      d.ox += d.v * dt;
+      if (d.ox > 60) d.ox -= 120;
+      m.position.set(drone.position.x + d.ox, Math.max(1, drone.position.y - 15 + d.oy), drone.position.z + d.oz);
+    }
+    // Height limit: the ceiling turns red while the drone is above it.
+    const tooHigh = track[Math.min(i, track.length - 1)].alt > permit.maxAltM;
+    (ceiling.material as THREE.MeshBasicMaterial).color.setHex(tooHigh ? C.bad : C.violet);
+    (ceiling.material as THREE.MeshBasicMaterial).opacity = tooHigh ? 0.22 : 0.06;
+    // Safety link to home base.
+    const lost = linkLostAt !== undefined && simT >= (recs.filter((r) => r.k === "DECISION").pop()?.t ?? t0) + 4000;
+    linkGeo.setFromPoints([drone.position.clone(), new THREE.Vector3(track[0].p.x, 2, track[0].p.z)]);
+    link.computeLineDistances();
+    linkMat.color.setHex(lost ? C.bad : C.ok);
+    linkMat.opacity = lost ? 0.35 + 0.35 * Math.sin(now / 150) : 0.5;
+    lostSign.visible = lost && simT < t1;
+    lostSign.position.set(drone.position.x, drone.position.y + 7, drone.position.z);
+    // Cars.
+    for (const c of cars) {
+      c.u += c.s * dt;
+      if (c.u > span) c.u = -span;
+      if (c.u < -span) c.u = span;
+      c.g.position.set(c.along === "x" ? c.u : c.v, 0, c.along === "x" ? c.v : c.u);
+      c.g.rotation.y = (c.along === "z" ? Math.PI / 2 : 0) + (c.s < 0 ? Math.PI : 0);
     }
     for (const w of walkers) {
       w.a += w.w * dt;

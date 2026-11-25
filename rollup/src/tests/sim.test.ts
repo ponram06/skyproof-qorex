@@ -35,10 +35,13 @@ test("people_below: DENY while someone is at the drop point, then a fresh ALLOW"
   assert.equal(drops[drops.length - 1].ok, true);
 });
 
-test("link_lost: no decision is ever recorded and no gated action happens", () => {
+test("link_lost: after the link drops no decision is recorded, and the drone safe-stops instead of dropping", () => {
   const r = run("link_lost");
-  assert.equal(r.filter((x) => x.k === "DECISION").length, 0);
-  assert.deepEqual(r.filter((x) => x.k === "ACTION").map((x) => (x as { act: string }).act), ["SAFE_STOP"]);
+  assert.deepEqual(r.filter((x) => x.k === "DECISION").map((x) => (x as { act: string }).act), ["TAKEOFF"]);
+  assert.deepEqual(r.filter((x) => x.k === "ACTION").map((x) => (x as { act: string }).act), ["TAKEOFF", "SAFE_STOP"]);
+  const safe = r.find((x) => x.k === "ACTION" && (x as { act: string }).act === "SAFE_STOP")!;
+  const before = r.filter((x) => x.k === "SAMPLE" && x.t < safe.t).pop() as { lat: number };
+  assert.ok(before.lat > DEMO_PERMIT.area.lat, "it stops out on the route, not at home");
 });
 
 test("the same seed gives the same flight", () => {
