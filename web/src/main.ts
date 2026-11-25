@@ -180,6 +180,12 @@ function claimBadge(c: Data["claims"][number]) {
   return badge("warn", "Open");
 }
 
+/** "What is this page" box: who it is for, and what to do, in three steps. */
+function guide(who: string, steps: string[]) {
+  return `<div class="guide card"><div class="guide-who"><span class="muted tiny">This page is for</span><b>${who}</b></div>
+    <ol class="guide-steps">${steps.map((s, i) => `<li><span class="n">${i + 1}</span><span>${s}</span></li>`).join("")}</ol></div>`;
+}
+
 /* ================= pages ================= */
 
 function home() {
@@ -195,15 +201,27 @@ function home() {
     <div class="eyebrow"><span class="pulse"></span>Live on QoreChain testnet</div>
     <h1>Every drone flight,<br /><span>on the record.</span></h1>
     <p class="sub">Drones log every move to a record nobody can edit. Break a safety rule, and the victim is paid automatically.</p>
-    <div class="actions">
-      <a class="btn primary" href="#/tour">Watch the guided demo</a>
-      <button class="btn" data-scroll="demo">Try a flight yourself</button>
+    <div class="strip">
+      ${[
+        ["🛸", "A delivery drone flies", "It asks a safety check before every take-off, drop and landing."],
+        ["🔒", "Every moment is locked", "Signed with a quantum-safe key and saved on QoreChain. Nobody can edit it."],
+        ["✋", "Someone gets hurt", "They file a claim: where, when, what happened."],
+        ["💸", "Rule broken? Paid", "The record is checked automatically and the victim is paid from the operator's bond."],
+      ]
+        .map(([i, t, p], k) => `<div class="strip-step"><span class="strip-i">${i}</span><b>${k + 1}. ${t}</b><span>${p}</span></div>`)
+        .join("")}
+    </div>
+    <div class="start">
+      <span class="muted">Start here:</span>
+      <a class="btn primary" href="#/tour">I'm a judge: 3-minute guided demo</a>
+      <a class="btn" href="#/claims">A drone hurt me: file a claim</a>
+      <button class="btn" data-scroll="demo">Just show me a flight</button>
     </div>
     <div class="stats">${stats.map(([v, k]) => `<div><b>${esc(v)}</b><span>${esc(k)}</span></div>`).join("")}</div>
   </section>
 
   <section class="wrap section" id="demo">
-    <div class="head"><h2>Try it</h2><p>Pick a flight and watch what happens.</p></div>
+    <div class="head"><h2>Try it</h2><p>Pick a situation. Green ones are safe flights; red ones break a rule. Watch the drone, and read each step on the right as it happens.</p></div>
     <div class="demo">
       <div class="picker" role="tablist" aria-label="Flight">
         ${SIM_SCENARIOS.map((s) => `<button role="tab" data-s="${s}" class="${SAFE.includes(s) ? "safe" : "risky"}"><b>${esc(SCENARIO[s].name)}</b><span>${esc(SCENARIO[s].hint)}</span></button>`).join("")}
@@ -273,7 +291,8 @@ function homeReady() {
 function flightsPage() {
   return `
   <section class="wrap page">
-    <div class="head"><h1>Flights</h1><p>Real flights saved on QoreChain. Open one to check it.</p></div>
+    <div class="head"><h1>Flights</h1><p>Every real flight saved on QoreChain.</p></div>
+    ${guide("Anyone who wants to check a record", ["Open a flight to see its drone, take-off time and claims.", "Press <b>Try to edit this record</b>: the drone's signature catches the change.", "Hurt by one? Press <b>File a claim</b> on it."])}
     <div class="list">
       ${flights
         .map((f) => {
@@ -348,13 +367,8 @@ function claimsPage() {
   });
   return `
   <section class="wrap page">
-    <div class="head"><h1>Claims</h1><p>Hurt by a drone? File a claim with a 1 QOR deposit. The watchtower opens the sealed flight record and checks six rules. Rule broken: you're paid 5 QOR and get your deposit back. No rule broken: an insurer reviews your proof. A false claim loses its deposit.</p></div>
-    <ol class="flow">
-      <li><b>You file</b><span>What happened, when, where, a photo fingerprint, and a 1 QOR deposit</span></li>
-      <li><b>Records checked</b><span>The watchtower reads the drone's signed log against six rules</span></li>
-      <li><b>Rule broken: paid</b><span>5 QOR plus your 1 QOR back, automatically</span></li>
-      <li><b>No rule broken: insurer</b><span>A person checks your proof. Approved: paid. False claim: deposit kept</span></li>
-    </ol>
+    <div class="head"><h1>File a claim</h1><p>Hurt by a drone, or your things damaged? Claim here. If the drone broke a safety rule you're paid automatically: 5 QOR plus your 1 QOR deposit back. If not, an insurer looks at your proof. A false claim loses its deposit.</p></div>
+    ${guide("People hurt by a drone", ["<b>Get a claim wallet</b> (made in your browser) and add 2 test QOR.", "<b>Click where it happened</b> on the map and say when. The page finds the drone that was there.", "<b>Say what happened</b>, add a photo if you have one, and file. Check back below with your address."])}
     <section class="card file" id="file" aria-labelledby="fileTitle">
       <div class="file-head"><h2 id="fileTitle">File a claim</h2><span class="muted">Signed with a quantum-safe key (ML-DSA-87), straight from this page.</span></div>
       <div id="fileBox"></div>
@@ -692,7 +706,8 @@ function proofPage() {
   const paid = Object.entries(data.withdrawalsExecuted ?? {}).map(([i, tx]) => ({ i, tx, w: allW.find((w) => w.index === i) }));
   return `
   <section class="wrap page">
-    <div class="head"><h1>Proof</h1><p>For judges and developers. Everything here can be checked live against QoreChain.</p></div>
+    <div class="head"><h1>Batches, payouts and audit</h1><p>Everything here can be checked live against QoreChain.</p></div>
+    ${guide("Judges and developers", ["Press <b>Verify</b> on any batch: your browser checks its settlement receipt on QoreChain.", "See every payout: how much, to whom, from which batch.", "Read the <b>independent audit</b>: each payout matched to a claim that was owed."])}
 
     <div class="grid-3">
       <div class="card fact"><span>Rollup</span><b>${esc(r.rollupId)}</b><em>${badge(r.status === "active" ? "ok" : "warn", r.status)}</em></div>
@@ -781,7 +796,8 @@ function proofReady() {
 function investigatePage() {
   return `
   <section class="wrap page">
-    <div class="head"><h1>Investigate</h1><p>Every flight's full record is on QoreChain, but sealed: locked with ML-KEM-1024 so the public can't read where people live or where the drone went. Only a key holder can open it. Try it below.</p></div>
+    <div class="head"><h1>Open a sealed record</h1><p>Every flight's full record is on QoreChain, but sealed with ML-KEM-1024, so the public can't see where people live or where the drone went. Only a key holder can open it.</p></div>
+    ${guide("Investigators (and judges, with the demo key)", ["Type the demo code <b>skyproof-demo</b> (try a wrong one first: it stays sealed).", "Pick a flight.", "Press <b>Open record</b>: you see the flight in 3D and which rules held."])}
     <div class="inv-who-grid">
       <div class="card inv-who"><b>Investigator</b><span>An aviation authority, police or accident investigator. Holds only a <b>read key</b>: can open any flight's sealed record and see if a rule was broken. <b>Cannot</b> decide claims or move money.</span></div>
       <div class="card inv-who"><b>Insurer</b><span>Holds a read key <b>and</b> a signing key. Opens a record only to decide a claim the rules didn't flag, then signs approve or reject on chain, and that decision moves money. See the <a class="link" href="#/insurer">Insurers</a> page.</span></div>
@@ -888,7 +904,8 @@ function insurerPage() {
   };
   return `
   <section class="wrap page">
-    <div class="head"><h1>Insurer desk</h1><p>Claims where the drone's signed record shows no broken rule come here. Check the victim's proof, open the sealed flight record, then approve or reject. Your decision is signed with your quantum-safe key and the watchtower pays (or keeps the deposit) on its next check.</p></div>
+    <div class="head"><h1>Insurer desk</h1><p>Claims the rules couldn't settle come here: the drone broke no rule, or its operator published no record. A person decides. The decision is signed with a quantum-safe key and the watchtower carries it out.</p></div>
+    ${guide("The insurer (judges can look; deciding needs the insurer's own key)", ["Load the insurer key file.", "For each claim, check the victim's photo against its fingerprint and open the sealed flight record.", "Write a reason and <b>approve</b> (victim paid) or <b>reject</b> (false claim, deposit kept)."])}
     <div class="card form">
       <label><span>Insurer key file</span><input type="file" id="insKey" accept=".json" /></label>
       <span class="muted tiny" id="insWho">Not signed in. Create the demo key with <code>npm run insurer-key</code> in <code>rollup/</code>.</span>
@@ -1017,7 +1034,8 @@ function tourPage() {
     `<li class="card tour-step"><div class="tour-n">${n}</div><div class="tour-body"><h3>${title}</h3><p class="muted">${lead}</p>${body}</div></li>`;
   return `
   <section class="wrap page">
-    <div class="head"><h1>Guided demo</h1><p>One real drone flight on QoreChain testnet, from take-off to payout, in seven steps. Every “Check” button asks the chain live from your browser, so you don't have to trust this page.</p></div>
+    <div class="head"><h1>Guided demo</h1><p>One real drone flight on QoreChain testnet, from take-off to payout, in seven steps.</p></div>
+    ${guide("Judges: start here", ["Read the steps top to bottom (about 3 minutes).", "Press each <b>Check</b> button: your browser asks QoreChain directly, so you don't have to trust this page.", "Pick another flight at the top to follow a different story."])}
     <div class="card tour-pick">
       <span class="muted">Follow this flight:</span>
       <div class="seg">${flights.map((f) => `<button class="${f.id === pick.id ? "on" : ""}" data-tf="${esc(f.id)}">${esc(f.name)}</button>`).join("")}</div>
@@ -1171,7 +1189,8 @@ function operatorPage() {
   ];
   return `
   <section class="wrap page">
-    <div class="head"><h1>Operator console</h1><p>Everything QoreChain holds about your drones: every flight they signed, its batch, the claims made against you and what they cost. You can't edit any of it, and neither can anyone else.</p></div>
+    <div class="head"><h1>Operator console</h1><p>Everything QoreChain holds about this operator's drones. Nobody can edit any of it, not even the operator.</p></div>
+    ${guide("Drone operators", ["See your drones, where each may fly, and every flight they signed.", "See the claims against you and what they cost.", "Watch the rollup's inbox live: each new flight part appears as it is posted."])}
     <div class="card op-id">
       <div class="grow"><span class="muted tiny">Operator (rollup creator)</span><b class="mono">${esc(op)}</b></div>
       ${badge(data.rollup.status === "active" ? "ok" : "warn", `Rollup ${data.rollup.rollupId} · ${data.rollup.status}`)}
@@ -1258,6 +1277,8 @@ function route() {
   $("#app").innerHTML = render();
   ready?.();
   $$(".links a").forEach((a) => a.classList.toggle("on", a.dataset.r === page));
+  $("#moreMenu").classList.toggle("on", ["flights", "investigate", "proof"].includes(page));
+  ($("#moreMenu") as HTMLDetailsElement).open = false;
   document.body.classList.remove("menu-open");
   $("#menu").setAttribute("aria-expanded", "false");
   if (!location.hash.split("/")[2]) window.scrollTo(0, 0);
