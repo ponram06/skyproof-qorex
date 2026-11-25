@@ -27,8 +27,9 @@ flowchart LR
 2. **Seal.** The segment's records are sealed with **ML-KEM-1024** to the investigator's and insurer's keys (registered on chain) and posted to the rollup inbox. A public header, signed by the drone, commits to the sealed body.
 3. **Settle.** The submitter executes the inbox with **qledger-v1** and submits a batch, **anchored under the creator's ML-DSA-87 signature** in the same transaction.
 4. **Watch.** The watchtower re-executes every batch, **challenges a wrong root with a fraud proof**, opens claimed flights and judges them against six rules.
-5. **Claim.** A victim files a claim from the website: what happened, when, where, a photo fingerprint (SHA-256; the photo stays on their phone) and a **1 QOR refundable deposit**, all in one hybrid-signed transaction from a quantum-safe wallet the page creates in the browser.
+5. **Claim.** A victim files a claim from the website. They name the drone (its painted ID or Remote ID broadcast) and the time, and the page finds the flight that was in the air then. A flight the operator never published can still be claimed: if no record appears within ~30 minutes, the claim goes to the insurer marked "no record". The claim holds what happened, when, where, a photo fingerprint (SHA-256; the photo stays on their phone) and a **1 QOR refundable deposit**, all in one hybrid-signed transaction from a quantum-safe wallet the page creates in the browser.
 6. **Pay or review.** A breach pays the victim **5 QOR plus their deposit back** from the claims pool (the operator's bond) as a **qledger withdrawal**, executed on QoreChain once the batch is final. No breach sends the claim to the **insurer**, who checks the photo against its fingerprint, opens the sealed record and signs a decision: approved → paid the same way; rejected as false → nothing paid, deposit kept. Deposits make spam and false claims cost money.
+7. **Audit.** Only the watchtower holds the pool key, and qledger has no multi-signature, so a separate program (`npm run audit`) rebuilds everything from the chain and matches every pool payout to a claim that was owed. On testnet: 4 of 4 justified. Known limits, stated plainly, are in the [threat model](docs/THREAT_MODEL.md#known-limits-stated-plainly).
 
 **Judges: start with the website's Demo page.** It follows one real flight from take-off to payout in seven steps, and every "Check" button asks QoreChain live from your browser.
 
@@ -69,10 +70,10 @@ flowchart LR
 | **Demo** | Judges | One real flight end to end in seven steps, with live checks: each signed part matched byte for byte with QoreChain's copy, a tamper attempt, the claim, the verdict, the payout tx and the fraud-proof tx read from the chain |
 | **Home** | Everyone | 3D demo of all eight scenarios, judged in the browser by the same rules code as the watchtower |
 | **Flights** | Everyone | Real flights, their ML-DSA-87 signatures and a tamper test |
-| **Claims** | Victims | File a claim (deposit, when/where, photo fingerprint) from a quantum-safe browser wallet; look up your claims and balance |
+| **Claims** | Victims | File a claim from a quantum-safe browser wallet: name the drone and the time, and the page finds the flight that was in the air (or claim one the operator never published). Deposit, photo fingerprint, and a live lookup of your claims and balance |
 | **Insurers** | Insurer | Claims sent to review: check the victim's photo, open the sealed record, approve or reject with a signed decision |
 | **Operators** | Drone operators | Your drones, flight log, bond, claims against you and their cost, and the rollup inbox read live |
-| **Proof** | Anyone | Live settlement-receipt verification, payouts, upheld fraud proofs |
+| **Proof** | Anyone | Live settlement-receipt verification, every payout (amount, recipient, batch), the independent payout audit, upheld fraud proofs |
 | **Investigate** | Investigator | ML-KEM-1024 decryption and 3D replay of on-chain flights |
 
 ## Run it
@@ -82,7 +83,7 @@ Needs Node 22+. Tests and the dry run need no wallet and spend nothing:
 ```sh
 cd rollup
 npm install
-npm test           # 50 tests
+npm test           # 52 tests
 npm run dry-run    # every scenario end to end, offline
 ```
 
@@ -98,6 +99,7 @@ npm run claim -- <flight id>      # or file it from the website's Claims page
 npm run insurer-key               # the insurer's key file for the Insurers page
 npm run batch                     # settle (anchored, ML-DSA-87)
 npm run watch                     # re-execute, judge, pay out (--loop to keep watching)
+npm run audit                     # independently re-derive what was owed and match every pool payout
 npm run batch                     # settle the payout
 npm run withdraw                  # after the challenge window
 npm run receipt -- <batch>        # verify the settlement receipt

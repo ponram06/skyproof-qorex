@@ -32,6 +32,7 @@ What SkyProof protects, who might attack it, and what stops them. Code reference
 | Operator swaps a whole segment body | The signed header commits to the SHA-256 of the sealed body post. | `openSegment` |
 | Operator deletes or reorders records | Sequence numbers and the hash chain; segment headers chain through `prev`. | `checkChain`, `judgeFlight` |
 | Operator withholds a segment or never closes the flight | Counted as a breach (B5): a record the operator cannot produce intact counts against the operator. | `judgeFlight`, rule B5 |
+| Operator withholds a whole flight | A victim can claim by drone ID and time without picking a published flight. If no record of the claimed flight is published within 900 blocks (~30 min) of the claim, it goes to the insurer marked "no record", so hiding a flight never ends the claim. | `decide`, `RECORD_GRACE_BLOCKS` |
 | Someone registers a fake drone or forges headers | Drone registrations count only from the rollup's creator; headers need the registered drone's ML-DSA-87 signature. | `readPosts` |
 | A quantum adversary forges the drone's or operator's signature | ML-DSA-87 (FIPS 204, NIST level 5) for drone headers, batch anchors and every native transaction (hybrid with secp256k1). | `@qorechain/sdk` hybrid signing |
 
@@ -54,18 +55,23 @@ What SkyProof protects, who might attack it, and what stops them. Code reference
 | A fake insurer decision | Decisions count only from the insurer's address (hybrid ML-DSA-87 signed tx), only for a claim in review, and only once. | `readPosts` |
 | Forged photo evidence | Only the photo's SHA-256 goes on chain at filing time; the insurer checks the photo the victim shows them against it, so it can't be swapped later. | website, Insurers page |
 | Operator drains its bond before claims are judged | A bond exit is paid only when no claim is open or with the insurer, and never beyond the pool balance. | `decide` |
+| Someone blocks the operator's bond exit forever with a claim on a flight that doesn't exist | That claim reaches the insurer after the 30-minute grace period, and the insurer's decision closes it; a false one loses its deposit. | `decide` |
+| The judge pays out money nobody was owed | The independent payout audit rebuilds the judge's view from the chain alone and matches every pool withdrawal to a paid claim or a bond exit; an unmatched one is flagged on the website. This detects, it does not prevent (see assumption 1). | `audit.ts`, `npm run audit` |
 | A fake settlement receipt | `verifySettlementReceipt` re-reads every field from chain state: the anchor, the creator's registered ML-DSA-87 key and the chain id. | `cli/receipt.ts` |
 
 ## Trust assumptions we accept
 
-1. **The judge holds the claims-pool key.** The judge could refuse to pay or pay wrongly. This is the price of automatic payouts in a ledger where only key holders move funds. It is bounded: the rules are public, deterministic code (`rules.ts`), every input is on chain, and anyone holding a recipient key can re-run a verdict and prove the judge wrong. A production version would split the pool key across several judges (threshold signing).
+1. **The judge holds the claims-pool key.** The judge could refuse to pay or pay wrongly. qledger-v1 accounts take a single ML-DSA-44 key, with no multi-signature, so today nothing on chain can stop a dishonest judge. What bounds it: the rules are public, deterministic code (`rules.ts`); every input is on chain; and the independent payout audit (`npm run audit`) re-derives what was owed and flags any payout that matches nothing. The audit found all 4 testnet payouts justified. The production fix is a multi-signature or threshold pool account, so that two independent judges must agree before money moves.
 2. **The investigator and insurer can read the records.** By design. A record sealed to nobody could not be judged.
 3. **The insurer judges claims with no breach.** A human decision is needed when the signed record shows no broken rule but someone may still have been hurt. It is signed and public, with its reason, and it can only pay or refuse a claim the rules sent to review: it cannot touch claims the rules decided.
 4. **One mnemonic derives every demo role.** This lets one person run the demo. In production each role holds its own secret.
 
-## Out of scope / limits
+## Known limits (stated plainly)
 
-- **Sensor honesty.** The record proves what the drone recorded and decided, not that its GPS or camera told the truth. Tamper-resistant hardware is the next layer.
+- **In the demo, the operator can produce the drone's signing key.** Every demo key, including the drone's ML-DSA-87 key, is derived from one mnemonic that the operator runs. So in the demo the operator *could* sign a made-up "clean" record. The signatures prove the record was not edited after signing; they cannot prove who held the key. In production the drone key must be generated and kept inside a secure element on the drone, which signs records but never exports the key. The operator registers its public key (as today), and the drone maker attests that it lives in hardware.
+- **Sensor honesty.** The record proves what the drone recorded and decided, not that its GPS, wind sensor or camera told the truth. A spoofed GPS produces a validly signed false track. Defences beyond this project: tamper-resistant sensors, and cross-checking the track against independent Remote ID receivers (drones must broadcast their ID and position in many countries).
+- **Finding the flight relies on the drone's ID.** The victim names the drone (painted ID or Remote ID broadcast) and the time. A victim who saw no ID can still claim "my flight isn't listed", but then the insurer has less to go on.
+- **The location in a claim is the victim's word** until the insurer opens the sealed record and compares it with the drone's position log. The watchtower's six rules don't check it.
 - **A compromised drone key** signs whatever the attacker wants. Mitigation in production: keys in a secure element, rotation with `MsgRotatePQCKey`.
 - **Liveness.** If the watchtower is offline for a whole challenge window (3,600 s on testnet), a fraudulent batch can finalise. Anyone can run a watchtower; more than one should.
 - **Withdrawals wait for finalisation** (one challenge window) before they can be executed on QoreChain.
