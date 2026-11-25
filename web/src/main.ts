@@ -929,6 +929,7 @@ function investigateReady() {
 function insurerPage() {
   const review = data.claims.filter((c) => c.status === "review");
   const decided = data.claims.filter((c) => c.decision);
+  const practice = practiceClaim();
   const card = (c: Data["claims"][number], i: number) => {
     return `<div class="card review" data-i="${i}">
       <div class="review-head"><div class="grow"><b>“${esc(c.note)}”</b><span class="muted">by <span class="mono">${esc(c.victim)}</span></span></div>${badge("warn", "Waiting for you")}</div>
@@ -951,7 +952,16 @@ function insurerPage() {
   return `
   <section class="wrap page">
     <div class="head"><h1>Insurer desk</h1><p>Claims the rules couldn't settle come here: the drone broke no rule, or its operator published no record. A person decides. The decision is signed with a quantum-safe key and the watchtower carries it out.</p></div>
-    ${guide("The insurer (judges can look; deciding needs the insurer's own key)", ["Load the insurer key file.", "For each claim, check the victim's photo against its fingerprint and open the sealed flight record.", "Write a reason and <b>approve</b> (victim paid) or <b>reject</b> (false claim, deposit kept)."])}
+    ${guide("The insurer (judges: use the demo code)", ["Type the demo code <b>skyproof-demo</b>: a practice claim appears.", "Download the two photos and check each one: only the real one matches the fingerprint on chain. Open the sealed flight record.", "Write a reason and <b>approve</b> or <b>reject</b>: you see exactly what would be signed and posted. In demo mode nothing is posted."])}
+    <div class="card form ins-key">
+      <label><span>Demo code (for judges)</span><input id="insCode" placeholder="type skyproof-demo" autocomplete="off" spellcheck="false" /></label>
+      <span class="muted tiny" id="insDemoNote">Demo mode uses a practice claim and a read-only key. The real insurer key is never published: it could approve fake claims.</span>
+    </div>
+    ${practice >= 0 ? `<div id="insPractice" hidden>
+      <h2 class="sub-h">Practice claim <span class="muted tiny">(already decided on chain: ${data.claims[practice].decision?.approve ? "approved" : "rejected"})</span></h2>
+      <p class="tiny muted">Photos to test with: <a href="demo-photo.png" download>the victim's real photo</a> · <a href="demo-photo-wrong.png" download>a different photo</a></p>
+      <div class="list">${card(data.claims[practice], practice)}</div>
+    </div>` : ""}
     <div class="card form ins-key">
       <label><span>Insurer key file</span><input type="file" id="insKey" accept=".json" /></label>
       <span class="muted tiny" id="insWho">Not signed in. Create the demo key with <code>npm run insurer-key</code> in <code>rollup/</code>.</span>
@@ -964,9 +974,36 @@ function insurerPage() {
   </section>`;
 }
 
+const practiceClaim = () => data.claims.findIndex((c) => c.decision && c.evidence && !c.missing);
+
 function insurerReady() {
   let keys: SigningKeys | undefined;
   let kem: { address: string; seed: string } | undefined;
+  let demo = false;
+  const practice = practiceClaim();
+  $<HTMLInputElement>("#insCode").addEventListener("input", async (e) => {
+    const v = (e.target as HTMLInputElement).value.trim().toLowerCase();
+    const note = $("#insDemoNote");
+    if (v.length < "skyproof-demo".length) return;
+    if (v !== "skyproof-demo") {
+      note.innerHTML = `<span class="alert inline">Wrong code.</span>`;
+      return;
+    }
+    try {
+      const res = await fetch("demo-investigator.json");
+      if (!res.ok) throw new Error("not published");
+      const k = await res.json();
+      if (!keys) kem = { address: k.address, seed: k.mlkem1024Seed };
+      demo = true;
+      const box = document.getElementById("insPractice");
+      if (box) box.hidden = false;
+      $$<HTMLButtonElement>(`[data-decide="${practice}"]`).forEach((b) => (b.disabled = false));
+      note.innerHTML = `✓ Demo mode on. Work through the practice claim below. Decisions are shown, not posted.`;
+      box?.scrollIntoView({ behavior: "smooth", block: "start" });
+    } catch {
+      note.innerHTML = `<span class="alert inline">The demo key isn't published on this site.</span>`;
+    }
+  });
   $<HTMLInputElement>("#insKey").addEventListener("change", async (e) => {
     const file = (e.target as HTMLInputElement).files?.[0];
     if (!file) return;
@@ -1015,11 +1052,19 @@ function insurerReady() {
       const approve = btn.dataset.approve === "1";
       const reason = $<HTMLInputElement>(`[data-reason="${i}"]`).value.trim();
       const out = $(`#rv${i}`);
-      if (!keys) return;
       if (!reason) {
         out.innerHTML = `<p class="alert">Write a reason first. It is stored on chain with your decision.</p>`;
         return;
       }
+      if (demo && (i === practice || !keys)) {
+        const d = { flight: c.flight, victim: c.victim, approve, reason };
+        out.innerHTML = `<div class="result ${approve ? "ok" : "bad"}"><span class="icon">${approve ? "✓" : "✕"}</span><div><b>Demo: ${approve ? "approved" : "rejected"}. Nothing was posted.</b>
+          <span>With the real insurer key, this decision is signed (secp256k1 + ML-DSA-87) and posted to rollup <span class="mono">${esc(data.rollup.rollupId)}</span>. The watchtower then ${approve ? `pays the victim 5 QOR plus the ${qor(c.deposit ?? "0")} QOR deposit` : "keeps the deposit"}.</span>
+          <span>The real decision on chain for this claim: <b>${c.decision?.approve ? "approved" : "rejected"}</b>, “${esc(c.decision?.reason ?? "")}”</span>
+          <pre class="mono tiny">${esc(JSON.stringify(d, null, 2))}</pre></div></div>`;
+        return;
+      }
+      if (!keys) return;
       $$<HTMLButtonElement>(`[data-decide="${i}"]`).forEach((b) => (b.disabled = true));
       try {
         const r = await postDecision(client, keys, data.rollup.rollupId, { flight: c.flight, victim: c.victim, approve, reason }, (step) => {
