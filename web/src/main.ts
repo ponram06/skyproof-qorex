@@ -2,7 +2,7 @@ import "./polyfill";
 import { buildSettlementReceipt, createRdkClient, verifySettlementReceipt } from "@qorechain/rdk";
 import { parseHeaderPost, verifyHeader, type SegmentHeader } from "./verify";
 import { drawFlight, openFlight, type InvestigatorData } from "./investigator";
-import { mountArena, type ArenaHandle, type Rec } from "./arena";
+import { mountArena, plain, type ArenaHandle, type Rec } from "./arena";
 import { DEMO_WORLD, simulate, SIM_SCENARIOS, type SimScenario, type World } from "../../rollup/src/sim/sim";
 import { DEMO_PERMIT } from "../../rollup/src/flight/scenarios";
 import { judge, type Verdict } from "../../rollup/src/rules";
@@ -231,19 +231,6 @@ function home() {
         <div id="simView" class="view"></div>
         <div id="ruleList" class="rules"></div>
       </div>
-    </div>
-  </section>
-
-  <section class="wrap section">
-    <div class="head"><h2>How it works</h2></div>
-    <div class="steps">
-      ${[
-        ["1", "Ask", "The drone asks permission before every take-off, drop and landing."],
-        ["2", "Lock", "Each flight is sealed and saved on QoreChain. Nobody can edit it."],
-        ["3", "Pay", "Broke a rule? The victim is paid from the operator's deposit."],
-      ]
-        .map(([n, t, p]) => `<div class="card step"><span class="n">${n}</span><h3>${t}</h3><p>${p}</p></div>`)
-        .join("")}
     </div>
   </section>
 
@@ -526,7 +513,7 @@ function renderFileBox(w: ClaimWallet | undefined, flight?: string) {
     </div>
     <p class="fund" id="wFund" hidden>Send at least <b>${CLAIM_FUNDS_QOR} test QOR</b> to this address: a 1 QOR deposit (you get it back if your claim is right) plus the network fee. This page checks every few seconds.</p>
     <form id="claimForm" class="claim-form">
-      <div class="q"><b>1. Where did it happen?</b> <span class="muted">Click the map. The circles are where each registered drone is allowed to fly.</span> <button type="button" class="btn sm" id="cGeo">Use my location</button></div>
+      <div class="q"><span class="q-t">1. Where did it happen?</span><span class="muted q-h">Click the map. The circles are where each registered drone is allowed to fly.</span><button type="button" class="btn sm" id="cGeo">Use my location</button></div>
       <div id="cMap" class="claim-map"></div>
       <p class="tiny muted" id="cPinNote">No place chosen yet.</p>
       <div class="two">
@@ -616,7 +603,7 @@ function renderFileBox(w: ClaimWallet | undefined, flight?: string) {
     const cands = all.filter((c) => Number.isNaN(t) || c.off <= 3 * 3600_000);
     // Nothing near that time: still show these drones' flights, nearest first, so the victim sees why.
     const others = cands.length ? [] : all.slice(0, 4);
-    const nrDrones = drone ? [drone] : here.length ? here : ["unknown-drone"];
+    const nrDrones = drone ? [drone] : pin && here.length ? here : ["unknown-drone"];
     const nrIds = nrDrones.map(noRecordId);
     if (!picked || ![...cands.map((c) => c.f.id), ...all.slice(0, 4).map((c) => c.f.id), ...nrIds].includes(picked)) picked = cands.find((c) => c.off === 0)?.f.id ?? cands[0]?.f.id ?? nrIds[0];
     const ago = (ms: number) => (ms < 3600_000 ? `${Math.round(ms / 60000)} min` : ms < 48 * 3600_000 ? `${Math.round(ms / 3600_000)} h` : `${Math.round(ms / 86_400_000)} days`);
@@ -638,7 +625,7 @@ function renderFileBox(w: ClaimWallet | undefined, flight?: string) {
       nrDrones
         .map(
           (d, k) => `<label class="match-row nr"><input type="radio" name="cPick" value="${esc(nrIds[k])}"${picked === nrIds[k] ? " checked" : ""} />
-        <span class="grow"><b>My flight isn't listed${d === "unknown-drone" ? "" : `: claim against ${esc(d)}`}</b><span class="muted block">${d === "unknown-drone" ? "No drone could be named. The insurer reviews it with what you give." : `${esc(d)} is allowed to fly ${FLEET[d] ? `over ${esc(FLEET[d].area)}` : "there"}. If its operator publishes no record within 30 minutes, the insurer reviews your claim knowing they kept none.`}</span></span></label>`,
+        <span class="grow"><b>My flight isn't listed${d === "unknown-drone" ? "" : `: claim against ${esc(d)}`}</b><span class="muted block">${d === "unknown-drone" ? (pin ? "No drone could be named. The insurer reviews it with what you give." : "Click the map first: the page then names the drones allowed to fly there.") : `${esc(d)} is allowed to fly ${FLEET[d] ? `over ${esc(FLEET[d].area)}` : "there"}. If its operator publishes no record within 30 minutes, the insurer reviews your claim knowing they kept none.`}</span></span></label>`,
         )
         .join("");
     $$<HTMLInputElement>('input[name="cPick"]').forEach((r) => r.addEventListener("change", () => (picked = r.value)));
@@ -965,7 +952,7 @@ function insurerPage() {
   <section class="wrap page">
     <div class="head"><h1>Insurer desk</h1><p>Claims the rules couldn't settle come here: the drone broke no rule, or its operator published no record. A person decides. The decision is signed with a quantum-safe key and the watchtower carries it out.</p></div>
     ${guide("The insurer (judges can look; deciding needs the insurer's own key)", ["Load the insurer key file.", "For each claim, check the victim's photo against its fingerprint and open the sealed flight record.", "Write a reason and <b>approve</b> (victim paid) or <b>reject</b> (false claim, deposit kept)."])}
-    <div class="card form">
+    <div class="card form ins-key">
       <label><span>Insurer key file</span><input type="file" id="insKey" accept=".json" /></label>
       <span class="muted tiny" id="insWho">Not signed in. Create the demo key with <code>npm run insurer-key</code> in <code>rollup/</code>.</span>
     </div>
@@ -1114,7 +1101,7 @@ function tourPage() {
             <p class="tiny"><a class="link" href="#/claims/${encodeURIComponent(pick.id)}">File your own claim on this flight →</a></p>` : "")}
       ${step(5, "The watchtower opens the sealed record and checks six rules", "The judge decrypts the record with its ML-KEM-1024 key and runs the six safety rules. No person decides this part.",
         `<div class="result ${c ? (c.verdict?.breach ? "bad" : "ok") : "wait"}"><span class="icon">${c ? (c.verdict?.breach ? "✕" : "✓") : "·"}</span><div><b>${c ? (c.verdict?.breach ? `Rule broken: ${broken.map((r) => esc(RULE[r] ?? r)).join(", ")}` : "No rule broken") : "Not judged: no claim"}</b>
-          <span>${c?.verdict?.breach ? esc(c.verdict.findings[0]?.detail ?? "") : c?.decision ? "The drone followed every rule, so the claim went to the insurer for a human review." : c ? "The claim was rejected: the signed record shows the drone followed every rule." : "Rules are checked when someone claims."}</span></div></div>
+          <span>${c?.verdict?.breach ? esc(c.verdict.findings[0] ? plain(c.verdict.findings[0]) : "") : c?.decision ? "The drone followed every rule, so the claim went to the insurer for a human review." : c ? "The claim was rejected: the signed record shows the drone followed every rule." : "Rules are checked when someone claims."}</span></div></div>
          ${c?.decision ? `<div class="result ${c.decision.approve ? "ok" : "bad"}"><span class="icon">${c.decision.approve ? "✓" : "✕"}</span><div><b>Insurer ${c.decision.approve ? "approved" : "rejected"} the claim</b><span>“${esc(c.decision.reason)}” · signed with the insurer's quantum-safe key, on chain</span></div></div>` : ""}
          <div class="rules">${ruleList(broken)}</div>`)}
       ${step(6, "The victim is paid automatically", pay ? `The judge signs a payout from the claims pool${BigInt(c?.deposit ?? "0") > 0n ? ", with the claimant's 1 QOR deposit back" : ""}. QoreChain settles it after the challenge window.` : c ? "No rule was broken, so nothing was paid. A claim filed today would go to the insurer for a human review." : "No claim, no payout.",

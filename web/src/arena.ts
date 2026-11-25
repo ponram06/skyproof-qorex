@@ -163,7 +163,7 @@ const BROKE: Record<string, string> = {
   B6_WIND: "took off in unsafe wind",
 };
 /** Plain-language explanation of a finding's detail. */
-function plain(f: { rule: string; detail: string }) {
+export function plain(f: { rule: string; detail: string }) {
   const act = (a: string) => ({ TAKEOFF: "took off", DROP: "dropped the parcel", LAND: "landed" })[a] ?? a.toLowerCase();
   let m = f.detail.match(/^(\w+) after the safety model said DENY/);
   if (m) return `The safety check said "No", but the operator ${act(m[1])} anyway.`;

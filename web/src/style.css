@@ -450,3 +450,25 @@ tr.hit td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
 .start-row input { flex: 1; font: 14px var(--mono); padding: 10px 12px; border: 1px solid var(--line-2); border-radius: 10px; }
 
 .file-restore[hidden], [hidden] { display: none !important; }
+
+/* ---------- alignment pass ---------- */
+/* home: the strip, the start buttons and the stats span the same width as the sections below */
+.strip, .hero .stats { max-width: none; margin-left: 0; margin-right: 0; }
+.hero.wrap { text-align: center; }
+/* claim form: every question looks the same */
+.claim-form .q { display: grid; grid-template-columns: auto 1fr auto; gap: 4px 10px; align-items: center; }
+.claim-form .q-t, .match legend { font-size: 14px; font-weight: 600; color: var(--ink); }
+.claim-form .q-h { font-size: 13px; }
+.match { border: 0; padding: 0; margin: 0; }
+.match legend { padding: 0; margin-bottom: 6px; float: left; width: 100%; }
+.match legend + * { clear: both; }
+.two { align-items: start; }
+.claim-form small { font-weight: 400; }
+/* insurer: hint beside the key file, centred */
+.ins-key { align-items: center; }
+.ins-key #insWho { align-self: center; padding-top: 22px; }
+@media (max-width: 860px) { .claim-form .q { grid-template-columns: 1fr; } }
+
+.strip-i { display: block; height: 34px; line-height: 34px; }
+.picker { align-items: stretch; }
+.picker button { display: flex; flex-direction: column; justify-content: flex-start; }
