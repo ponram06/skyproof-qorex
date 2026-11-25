@@ -104,3 +104,29 @@ Both claims were filed from the website's Claims page by a quantum-safe browser 
 | **`MsgExecuteWithdrawal`**: 6 QOR to claimant B, approved by the insurer, batch 7, withdrawal 3 | `29DA803EF3C78E0CC37E452AC891321C83451BCD553A229A97E5D20DA1D33A4B` (height 10,712,249) |
 
 Batches 5–7 were finalized after the 3,600 s challenge window with no challenge, and all roots matched the watchtower's re-execution. An earlier attempt to file a claim before the key was registered was refused at CheckTx (code 8) and cost no fee.
+
+## A claim on a flight the operator never published ("no record")
+
+Filed from the website's claim form with "my flight isn't listed", naming drone SKY-001 at 13:58 on 25 Nov 2026. No flight was published for that time.
+
+| Step | Tx |
+|---|---|
+| Claim `SKY-001@2026-11-25T13:58` with the 1 QOR deposit, in one transaction | `600F8148A23CBC6DA9F78491AF3945EA0D58522974265DAD5D9937796329EEAE` (height 10,718,055) |
+| **Batch 8** (the claim). Watchtower: the claim stays **open**, still inside the 900-block grace period | `AEFC10AC3C92D30EB2FA9196BB341E758D36F2C3DB883CDD7CECDB15BF65F69E` |
+| Watchtower after block 10,718,965: still no record, so the claim goes to **review, marked "no record"** | — |
+| **Insurer decision** from the Insurers page (approve: "the operator published no record for that time") | `3A8E927899BCB5CFE1691262C9CE2FB240D5A0A6622184BF8C5E78698D77D744` (height 10,724,163) |
+| **Batch 9** (the decision), then the watchtower posts the 6 QOR payout | batch `90DC0B12A94412BC2B1CCC1EE1E865DC8D386308BEE0F356E319ED1DF793C244`, payout `84D7D69CDC5BCDA6570BC13ADD54104598BF9A61C97B38B5D84EFB9D27171784` |
+| **Batch 10** (the payout as qledger withdrawal 4), final after the challenge window | `C964F0073F93CC20BF696B4F081B18C29D96D30F48F4812AEC460F9B8248E81D` |
+| **`MsgExecuteWithdrawal`**: 6 QOR to the claimant | `5BD4EAA2F8A510240B3F39113838E50CF70EB5E46759600307B6E515BDFC023F` (height 10,726,821) |
+
+Independent audit after this: **5 of 5** pool payouts justified.
+
+## The fleet: two more drones
+
+| Step | Tx |
+|---|---|
+| SKY-002 registered with its permit (Bandra West, r 2 km, one no-fly zone) | `907513218DC87C87A6785F3F68065FF8ECD6C071E2B659C308F99B1B0C043664` (height 10,725,017) |
+| SKY-003 registered with its permit (Andheri East, r 2 km, one no-fly zone) | `4683CC39A1F59D539AC17F369B71BC2811C6A703C64B46B0D6F4A5D53C787C24` (height 10,725,074) |
+| Flights `SKY-002-normal-1795605840484` (76 records) and `SKY-003-people_below-1795605920731` (80 records), settled in **batch 11** (30 entries) | `26C5A06F7770F3D3100B50FBF1011B185DDC2846F54542B0A6DC89BEF485F823` |
+
+Website: https://skyproof-qorex.malaysiawest.cloudapp.azure.com
