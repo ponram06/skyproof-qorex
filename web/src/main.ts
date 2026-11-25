@@ -501,7 +501,8 @@ function renderFileBox(w: ClaimWallet | undefined, flight?: string) {
       <div id="cMap" class="claim-map"></div>
       <p class="tiny muted" id="cPinNote">No place chosen yet.</p>
       <div class="two">
-        <label><span>2. When did it happen?</span><input type="datetime-local" id="cWhen" /></label>
+        <label><span>2. When did it happen?</span><input type="datetime-local" id="cWhen" />
+          <small class="muted">Demo: the testnet flights flew on <b>23 Nov 2026</b> (Kurla) and <b>25 Nov 2026</b> (Bandra, Andheri). <button type="button" class="linkbtn" id="cDemoTime">Use a time a flight was in the air</button></small></label>
         <label><span>3. Did you see the drone's ID? <em class="muted">(optional)</em></span><select id="cDrone"><option value="">No / not sure</option>${droneOpts}</select>
           <small class="muted">Painted on the drone, or shown by a Remote ID app.</small></label>
       </div>
@@ -570,29 +571,29 @@ function renderFileBox(w: ClaimWallet | undefined, flight?: string) {
     const whenV = $<HTMLInputElement>("#cWhen").value;
     const t = whenV ? new Date(whenV).getTime() : NaN;
     const here = dronesHere();
-    const cands = flights
+    const all = flights
       .filter((f) => (!drone || f.segs[0]?.header.drone === drone) && here.includes(f.segs[0]?.header.drone))
       .map((f) => {
         const { start, end } = flightWindow(f);
         const off = Number.isNaN(t) || start === undefined ? 0 : t < start ? start - t : t > end! ? t - end! : 0;
         return { f, start, end, off };
       })
-      .filter((c) => Number.isNaN(t) || c.off <= 3 * 3600_000)
       .sort((a, b) => (Number.isNaN(t) ? (b.start ?? 0) - (a.start ?? 0) : a.off - b.off));
+    const cands = all.filter((c) => Number.isNaN(t) || c.off <= 3 * 3600_000);
+    // Nothing near that time: still show these drones' flights, nearest first, so the victim sees why.
+    const others = cands.length ? [] : all.slice(0, 4);
     const nrDrones = drone ? [drone] : here.length ? here : ["unknown-drone"];
     const nrIds = nrDrones.map(noRecordId);
-    if (!picked || ![...cands.map((c) => c.f.id), ...nrIds].includes(picked)) picked = cands.find((c) => c.off === 0)?.f.id ?? cands[0]?.f.id ?? nrIds[0];
+    if (!picked || ![...cands.map((c) => c.f.id), ...all.slice(0, 4).map((c) => c.f.id), ...nrIds].includes(picked)) picked = cands.find((c) => c.off === 0)?.f.id ?? cands[0]?.f.id ?? nrIds[0];
+    const ago = (ms: number) => (ms < 3600_000 ? `${Math.round(ms / 60000)} min` : ms < 48 * 3600_000 ? `${Math.round(ms / 3600_000)} h` : `${Math.round(ms / 86_400_000)} days`);
     const near = (c: (typeof cands)[number]) =>
-      Number.isNaN(t) ? "" : c.off === 0 ? badge("ok", "In the air at that time") : badge("plain", `${Math.round(c.off / 60000)} min ${c.start! > t ? "after" : "before"} that`);
+      Number.isNaN(t) ? "" : c.off === 0 ? badge("ok", "In the air at that time") : badge("plain", `${ago(c.off)} ${c.start! > t ? "after" : "before"} that`);
+    const row = (c: (typeof cands)[number]) => `<label class="match-row"><input type="radio" name="cPick" value="${esc(c.f.id)}"${c.f.id === picked ? " checked" : ""} />
+          <span class="grow"><b>${esc(c.f.name)}</b><span class="muted block">Drone ${esc(c.f.segs[0]?.header.drone ?? "?")} · allowed over ${esc(FLEET[c.f.segs[0]?.header.drone]?.area ?? "its permit area")} · took off ${c.start ? esc(new Date(c.start).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })) : "—"} · about ${Math.max(1, Math.round((c.end! - c.start!) / 60000))} min in the air</span></span>${near(c)}</label>`;
     $("#cMatch").innerHTML =
       (cands.length
-        ? cands
-            .map(
-              (c) => `<label class="match-row"><input type="radio" name="cPick" value="${esc(c.f.id)}"${c.f.id === picked ? " checked" : ""} />
-          <span class="grow"><b>${esc(c.f.name)}</b><span class="muted block">Drone ${esc(c.f.segs[0]?.header.drone ?? "?")} · allowed over ${esc(FLEET[c.f.segs[0]?.header.drone]?.area ?? "its permit area")} · took off ${c.start ? esc(new Date(c.start).toLocaleString()) : "—"} · about ${Math.max(1, Math.round((c.end! - c.start!) / 60000))} min in the air</span></span>${near(c)}</label>`,
-            )
-            .join("")
-        : `<p class="muted tiny">${pin && !here.length ? "No registered drone is allowed to fly at that spot." : `No published flight${drone ? ` of ${esc(drone)}` : pin ? " of the drones allowed there" : ""}${Number.isNaN(t) ? "" : " within 3 hours of that time"}.`}</p>`) +
+        ? cands.map(row).join("")
+        : `<p class="nomatch">${pin && !here.length ? "No registered drone is allowed to fly at that spot." : `No flight${drone ? ` of ${esc(drone)}` : pin ? " of the drones allowed there" : ""} was in the air within 3 hours of ${esc(new Date(t).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }))}.${others.length ? " Their nearest flights are below; pick one if you got the time wrong." : ""}`}</p>${others.map(row).join("")}`) +
       nrDrones
         .map(
           (d, k) => `<label class="match-row nr"><input type="radio" name="cPick" value="${esc(nrIds[k])}"${picked === nrIds[k] ? " checked" : ""} />
@@ -600,6 +601,17 @@ function renderFileBox(w: ClaimWallet | undefined, flight?: string) {
         )
         .join("");
     $$<HTMLInputElement>('input[name="cPick"]').forEach((r) => r.addEventListener("change", () => (picked = r.value)));
+  };
+  $("#cDemoTime").onclick = () => {
+    // The newest flight of a drone allowed at the pin (or any), two minutes after take-off, in local time.
+    const here = dronesHere();
+    const f = [...flights].filter((x) => here.includes(x.segs[0]?.header.drone)).sort((a, b) => (flightTime(b.id)?.getTime() ?? 0) - (flightTime(a.id)?.getTime() ?? 0))[0];
+    const at = f && flightTime(f.id);
+    if (!at) return;
+    const d = new Date(at.getTime() + 60_000);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    $<HTMLInputElement>("#cWhen").value = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    repick();
   };
   const noRecordId = (d: string) => `${d}@${$<HTMLInputElement>("#cWhen").value || "unknown-time"}`;
   if (flight) {
