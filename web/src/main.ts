@@ -7,6 +7,10 @@ import { DEMO_WORLD, simulate, SIM_SCENARIOS, type SimScenario, type World } fro
 import { DEMO_PERMIT } from "../../rollup/src/flight/scenarios";
 import { judge, type Verdict } from "../../rollup/src/rules";
 import { parseClaim, type Claim } from "../../rollup/src/flight/posts";
+import { FLEET } from "../../rollup/src/flight/fleet";
+import type { Permit } from "../../rollup/src/rules";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
 import { balanceUqor, CLAIM_FUNDS_QOR, createWallet, fileClaim, fileFingerprint, forgetWallet, keysFromFile, loadWallet, postDecision, restoreWallet, type ClaimWallet, type SigningKeys } from "./wallet";
 
 /* ================= data ================= */
@@ -15,7 +19,7 @@ interface Data {
   generatedAt: string;
   chainId: string;
   rollup: { rollupId: string; creator: string; status: string; settlementMode: string; executionVm: string; sequencing: string; layerId: string; challengeWindowSec?: number; stakeAmount: string };
-  drones: Record<string, { publicKey: string }>;
+  drones: Record<string, { publicKey: string; permit?: Permit }>;
   batches: { index: number; status: string; inboxStart: number; inboxEnd: number; submittedTime: number; tx?: string; withdrawals: { index?: string; recipient: string; amount: string }[] }[];
   headers: { batch: number; seq: number; height: number; post: string }[];
   bodies?: Record<string, string>;
@@ -46,16 +50,16 @@ const SCENARIO: Record<SimScenario, { name: string; hint: string; about: string 
 };
 const SAFE: SimScenario[] = ["normal", "people_below", "link_lost"];
 /** Try-it: each scenario delivers to its own address (metres east, north of home base; the no-fly zone is 1.55 km north). */
-const L = (x: number, y: number): World => ({ home: [0, 0], drop: [x, y], route: [[x, 0], [x, y]], shortcut: [[x, y]] });
+const lRoute = (x: number, y: number): World => ({ home: [0, 0], drop: [x, y], route: [[x, 0], [x, y]], shortcut: [[x, y]] });
 const TRY_WORLDS: Record<SimScenario, World> = {
-  normal: L(1300, 700),
-  people_below: L(-1200, 800),
+  normal: lRoute(1300, 700),
+  people_below: lRoute(-1200, 800),
   link_lost: { home: [0, 0], drop: [1200, -1300], route: [[600, -400], [1200, -900], [1200, -1300]], shortcut: [[1200, -1300]] },
-  cheating: L(-700, 1300),
-  unapproved: L(300, -1400),
+  cheating: lRoute(-700, 1300),
+  unapproved: lRoute(300, -1400),
   shortcut: DEMO_WORLD,
-  altitude: L(1000, 1200),
-  wind: L(-1300, -900),
+  altitude: lRoute(1000, 1200),
+  wind: lRoute(-1300, -900),
 };
 const RULES: [string, string][] = [
   ["B1_GEOFENCE", "Stay in the allowed area"],
@@ -90,6 +94,10 @@ const flightTime = (id: string) => {
   const ms = Number(id.split("-").pop());
   return Number.isFinite(ms) && ms > 1e12 ? new Date(ms) : undefined;
 };
+
+/** Ground distance in metres (equirectangular; fine at city scale). */
+const distM = (a: { lat: number; lon: number }, b: { lat: number; lon: number }) =>
+  Math.hypot((a.lat - b.lat) * 111_320, (a.lon - b.lon) * 111_320 * Math.cos((a.lat * Math.PI) / 180));
 
 /** When a flight was in the air: take-off from its id, end from its last signed part's block (2 s blocks). */
 function flightWindow(f: Flight): { start?: number; end?: number } {
@@ -129,7 +137,7 @@ function buildFlights(d: Data): Flight[] {
     const all = d.claims.filter((c) => c.flight === id);
     return {
       id,
-      name: key ? FLIGHT_NAME[key] : id,
+      name: `${key ? FLIGHT_NAME[key] : id}${FLEET[segs[0].header.drone] ? ` · ${FLEET[segs[0].header.drone].area.split(",")[0]}` : ""}`,
       segs,
       intact: segs.every((s) => s.sigOk && s.chainOk && s.sealed),
       records: segs.reduce((n, s) => n + s.header.n, 0),
@@ -469,22 +477,24 @@ function renderFileBox(w: ClaimWallet | undefined, flight?: string) {
   const droneOpts = Object.keys(data.drones).map((d) => `<option value="${esc(d)}">${esc(d)}</option>`).join("");
   box.innerHTML = `
     <div class="wallet">
-      <div class="grow"><span class="muted tiny">Your claim wallet (payouts go here)</span><b class="mono" id="wAddr">${esc(w.address)}</b></div>
+      <div class="grow"><span class="muted tiny">This browser's claim wallet: your payout goes here. Every visitor gets their own, made in their browser.</span><b class="mono" id="wAddr">${esc(w.address)}</b></div>
       <button class="btn sm" id="wCopy">Copy</button>
       <span class="badge plain" id="wBal">Checking…</span>
     </div>
     <p class="fund" id="wFund" hidden>Send at least <b>${CLAIM_FUNDS_QOR} test QOR</b> to this address: a 1 QOR deposit (you get it back if your claim is right) plus the network fee. This page checks every few seconds.</p>
     <form id="claimForm" class="claim-form">
+      <div class="q"><b>1. Where did it happen?</b> <span class="muted">Click the map. The circles are where each registered drone is allowed to fly.</span> <button type="button" class="btn sm" id="cGeo">Use my location</button></div>
+      <div id="cMap" class="claim-map"></div>
+      <p class="tiny muted" id="cPinNote">No place chosen yet.</p>
       <div class="two">
-        <label><span>Which drone was it?</span><select id="cDrone"><option value="">I didn't see its ID</option>${droneOpts}</select>
-          <small class="muted">The ID is painted on the drone, and drones broadcast it (Remote ID).</small></label>
-        <label><span>When did it happen?</span><input type="datetime-local" id="cWhen" />
-          <small class="muted">Used to find the drone's flight at that moment.</small></label>
+        <label><span>2. When did it happen?</span><input type="datetime-local" id="cWhen" /></label>
+        <label><span>3. Did you see the drone's ID? <em class="muted">(optional)</em></span><select id="cDrone"><option value="">No / not sure</option>${droneOpts}</select>
+          <small class="muted">Painted on the drone, or shown by a Remote ID app.</small></label>
       </div>
-      <fieldset class="match"><legend>Which flight? <span class="muted">(flights in the air around that time)</span></legend><div id="cMatch"></div></fieldset>
-      <label><span>What happened?</span><textarea id="cNote" rows="3" maxlength="280" required placeholder="e.g. The parcel fell on my car near the drop point."></textarea></label>
-      <label><span>Where?</span><input id="cWhere" maxlength="200" placeholder="e.g. 12 Main St, near the park" />
-        <small class="muted">Public in your claim. If no rule was broken, the insurer opens the drone's sealed position log to check the drone was really there.</small></label>
+      <fieldset class="match"><legend>4. Which flight? <span class="muted">(drones allowed there, in the air around that time)</span></legend><div id="cMatch"></div></fieldset>
+      <label><span>5. What happened?</span><textarea id="cNote" rows="3" maxlength="280" required placeholder="e.g. The parcel fell on my car near the drop point."></textarea></label>
+      <label><span>Describe the place <em class="muted">(optional)</em></span><input id="cWhere" maxlength="140" placeholder="e.g. car park behind 12 Main St" />
+        <small class="muted">Public in your claim, with the map point. The insurer can compare it with the drone's sealed position log.</small></label>
       <label><span>Photo proof <em class="muted">(optional)</em></span><input type="file" id="cPhoto" accept="image/*" />
         <small class="muted">The photo stays on your device. Only its fingerprint (SHA-256) goes on chain, so when you show it to the insurer they can prove it is the same photo you filed.</small>
         <small class="mono" id="cPhotoHash"></small></label>
@@ -538,12 +548,16 @@ function renderFileBox(w: ClaimWallet | undefined, flight?: string) {
     renderFileBox(undefined, flight);
   };
   let picked = flight ?? "";
+  let pin: { lat: number; lon: number } | undefined;
+  /** Drones whose permitted area covers the pin (all drones when no pin). */
+  const dronesHere = () => Object.entries(data.drones).filter(([, d]) => !pin || (d.permit && distM(pin, d.permit.area) <= d.permit.area.r)).map(([id]) => id);
   const renderMatch = () => {
     const drone = $<HTMLSelectElement>("#cDrone").value;
     const whenV = $<HTMLInputElement>("#cWhen").value;
     const t = whenV ? new Date(whenV).getTime() : NaN;
+    const here = dronesHere();
     const cands = flights
-      .filter((f) => !drone || f.segs[0]?.header.drone === drone)
+      .filter((f) => (!drone || f.segs[0]?.header.drone === drone) && here.includes(f.segs[0]?.header.drone))
       .map((f) => {
         const { start, end } = flightWindow(f);
         const off = Number.isNaN(t) || start === undefined ? 0 : t < start ? start - t : t > end! ? t - end! : 0;
@@ -551,7 +565,9 @@ function renderFileBox(w: ClaimWallet | undefined, flight?: string) {
       })
       .filter((c) => Number.isNaN(t) || c.off <= 3 * 3600_000)
       .sort((a, b) => (Number.isNaN(t) ? (b.start ?? 0) - (a.start ?? 0) : a.off - b.off));
-    if (!picked || ![...cands.map((c) => c.f.id), noRecordId()].includes(picked)) picked = cands[0]?.f.id ?? noRecordId();
+    const nrDrones = drone ? [drone] : here.length ? here : ["unknown-drone"];
+    const nrIds = nrDrones.map(noRecordId);
+    if (!picked || ![...cands.map((c) => c.f.id), ...nrIds].includes(picked)) picked = cands.find((c) => c.off === 0)?.f.id ?? cands[0]?.f.id ?? nrIds[0];
     const near = (c: (typeof cands)[number]) =>
       Number.isNaN(t) ? "" : c.off === 0 ? badge("ok", "In the air at that time") : badge("plain", `${Math.round(c.off / 60000)} min ${c.start! > t ? "after" : "before"} that`);
     $("#cMatch").innerHTML =
@@ -559,15 +575,19 @@ function renderFileBox(w: ClaimWallet | undefined, flight?: string) {
         ? cands
             .map(
               (c) => `<label class="match-row"><input type="radio" name="cPick" value="${esc(c.f.id)}"${c.f.id === picked ? " checked" : ""} />
-          <span class="grow"><b>${esc(c.f.name)}</b><span class="muted block">Drone ${esc(c.f.segs[0]?.header.drone ?? "?")} · took off ${c.start ? esc(new Date(c.start).toLocaleString()) : "—"} · about ${Math.max(1, Math.round((c.end! - c.start!) / 60000))} min in the air</span></span>${near(c)}</label>`,
+          <span class="grow"><b>${esc(c.f.name)}</b><span class="muted block">Drone ${esc(c.f.segs[0]?.header.drone ?? "?")} · allowed over ${esc(FLEET[c.f.segs[0]?.header.drone]?.area ?? "its permit area")} · took off ${c.start ? esc(new Date(c.start).toLocaleString()) : "—"} · about ${Math.max(1, Math.round((c.end! - c.start!) / 60000))} min in the air</span></span>${near(c)}</label>`,
             )
             .join("")
-        : `<p class="muted tiny">No published flight${drone ? ` of ${esc(drone)}` : ""} within 3 hours of that time.</p>`) +
-      `<label class="match-row nr"><input type="radio" name="cPick" value="${esc(noRecordId())}"${picked === noRecordId() ? " checked" : ""} />
-        <span class="grow"><b>My flight isn't listed</b><span class="muted block">The operator may not have published it. They get 30 minutes after your claim; with still no record, the insurer reviews your claim knowing the operator kept no record.</span></span></label>`;
+        : `<p class="muted tiny">${pin && !here.length ? "No registered drone is allowed to fly at that spot." : `No published flight${drone ? ` of ${esc(drone)}` : pin ? " of the drones allowed there" : ""}${Number.isNaN(t) ? "" : " within 3 hours of that time"}.`}</p>`) +
+      nrDrones
+        .map(
+          (d, k) => `<label class="match-row nr"><input type="radio" name="cPick" value="${esc(nrIds[k])}"${picked === nrIds[k] ? " checked" : ""} />
+        <span class="grow"><b>My flight isn't listed${d === "unknown-drone" ? "" : `: claim against ${esc(d)}`}</b><span class="muted block">${d === "unknown-drone" ? "No drone could be named. The insurer reviews it with what you give." : `${esc(d)} is allowed to fly ${FLEET[d] ? `over ${esc(FLEET[d].area)}` : "there"}. If its operator publishes no record within 30 minutes, the insurer reviews your claim knowing they kept none.`}</span></span></label>`,
+        )
+        .join("");
     $$<HTMLInputElement>('input[name="cPick"]').forEach((r) => r.addEventListener("change", () => (picked = r.value)));
   };
-  const noRecordId = () => `${$<HTMLSelectElement>("#cDrone").value || "unknown-drone"}@${$<HTMLInputElement>("#cWhen").value || "unknown-time"}`;
+  const noRecordId = (d: string) => `${d}@${$<HTMLInputElement>("#cWhen").value || "unknown-time"}`;
   if (flight) {
     const f = flights.find((x) => x.id === flight);
     if (f) $<HTMLSelectElement>("#cDrone").value = f.segs[0]?.header.drone ?? "";
@@ -576,6 +596,44 @@ function renderFileBox(w: ClaimWallet | undefined, flight?: string) {
     picked = "";
     renderMatch();
   };
+  // The map: drone permit areas, and the victim's pin.
+  const areas = Object.entries(data.drones).filter(([, d]) => d.permit);
+  const map = L.map($("#cMap"), { scrollWheelZoom: false }).setView([19.08, 72.85], 11);
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 18, attribution: "&copy; OpenStreetMap contributors" }).addTo(map);
+  const COLORS = ["#6d4cff", "#e0533d", "#1b998b", "#f2b134", "#3a86ff"];
+  areas.forEach(([id, d], k) => {
+    const a = d.permit!.area;
+    L.circle([a.lat, a.lon], { radius: a.r, color: COLORS[k % COLORS.length], weight: 2, fillOpacity: 0.08 }).addTo(map).bindTooltip(`${id} · ${FLEET[id]?.area ?? "permit area"}`);
+    for (const z of d.permit!.noFly) L.circle([z.lat, z.lon], { radius: z.r, color: "#ff3b30", weight: 1, dashArray: "4", fillOpacity: 0.15 }).addTo(map).bindTooltip("No-fly zone");
+  });
+  if (areas.length) {
+    const pts = areas.flatMap(([, d]) => {
+      const a = d.permit!.area;
+      const dl = a.r / 111_320;
+      const dn = dl / Math.cos((a.lat * Math.PI) / 180);
+      return [L.latLng(a.lat - dl, a.lon - dn), L.latLng(a.lat + dl, a.lon + dn)];
+    });
+    map.fitBounds(L.latLngBounds(pts), { padding: [10, 10] });
+  }
+  let marker: L.CircleMarker | undefined;
+  const setPin = (lat: number, lon: number) => {
+    pin = { lat: Math.round(lat * 1e5) / 1e5, lon: Math.round(lon * 1e5) / 1e5 };
+    marker?.remove();
+    marker = L.circleMarker([pin.lat, pin.lon], { radius: 8, color: "#111", fillColor: "#b9f227", fillOpacity: 1, weight: 2 }).addTo(map);
+    const here = dronesHere();
+    $("#cPinNote").innerHTML = `Pinned ${pin.lat}, ${pin.lon}. ${here.length ? `Drones allowed to fly here: <b>${here.map(esc).join(", ")}</b>.` : "No registered drone is allowed to fly here."}`;
+    repick();
+  };
+  map.on("click", (e: L.LeafletMouseEvent) => setPin(e.latlng.lat, e.latlng.lng));
+  $("#cGeo").onclick = () =>
+    navigator.geolocation?.getCurrentPosition(
+      (p) => {
+        setPin(p.coords.latitude, p.coords.longitude);
+        map.setView([p.coords.latitude, p.coords.longitude], 14);
+      },
+      () => ($("#cPinNote").textContent = "Couldn't get your location. Click the map instead."),
+    );
+  setTimeout(() => map.invalidateSize(), 50);
   $("#cDrone").addEventListener("change", repick);
   $("#cWhen").addEventListener("change", repick);
   renderMatch();
@@ -589,14 +647,16 @@ function renderFileBox(w: ClaimWallet | undefined, flight?: string) {
   $("#claimForm").addEventListener("submit", async (e) => {
     e.preventDefault();
     const flightId = picked;
-    const drone = $<HTMLSelectElement>("#cDrone").value;
+    const pickedFlight = flights.find((x) => x.id === flightId);
+    const drone = pickedFlight?.segs[0]?.header.drone ?? (flightId.includes("@") ? flightId.split("@")[0] : $<HTMLSelectElement>("#cDrone").value);
     const note = $<HTMLTextAreaElement>("#cNote").value.trim();
     const when = $<HTMLInputElement>("#cWhen").value;
-    const where = $<HTMLInputElement>("#cWhere").value.trim();
+    const desc = $<HTMLInputElement>("#cWhere").value.trim();
+    const where = [pin ? `${pin.lat},${pin.lon}` : "", desc].filter(Boolean).join(" · ");
     const out = $("#fileOut");
     if (!note) return;
-    if (flightId.includes("@") && (!drone || !when)) {
-      out.innerHTML = `<p class="alert">For a flight that isn't listed, choose the drone and say when it happened, so the claim names exactly what to look for.</p>`;
+    if (flightId.includes("@") && (!when || (!pin && drone === "unknown-drone"))) {
+      out.innerHTML = `<p class="alert">For a flight that isn't listed, say when it happened and click where on the map, so the claim names exactly what to look for.</p>`;
       return;
     }
     if (!data.claimsPool) {
@@ -606,7 +666,7 @@ function renderFileBox(w: ClaimWallet | undefined, flight?: string) {
     const send = $<HTMLButtonElement>("#cSend");
     send.disabled = true;
     try {
-      const claim = { flight: flightId, note, ...(when ? { when } : {}), ...(where ? { where } : {}), ...(evidence ? { evidence } : {}), ...(drone ? { drone } : {}) };
+      const claim = { flight: flightId, note, ...(when ? { when } : {}), ...(where ? { where } : {}), ...(evidence ? { evidence } : {}), ...(drone && drone !== "unknown-drone" ? { drone } : {}) };
       const r = await fileClaim(client, w, { rollupId: data.rollup.rollupId, poolAccount: data.claimsPool.account, depositUqor: BigInt(data.claimsPool.depositUqor), claim }, (step) => {
         out.innerHTML = `<p class="found"><i class="spin inline"></i>${esc(step)}</p>`;
       });
