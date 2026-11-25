@@ -209,6 +209,29 @@ test("malformed posts are ignored, not fatal", () => {
   assert.equal(st.claims.length, 0);
 });
 
+/* ---------- paying another address ---------- */
+
+test("a claim can send its payout to the victim's own address; an unpayable one is refused", () => {
+  const P = qledgerKeypairFromSeed(new Uint8Array(32).fill(5));
+  const recs = cleanFlight();
+  (recs.find((r) => r.k === "DECISION" && r.req === "r2") as { ok: boolean }).ok = false;
+  const OWN = "qor1crs332umw4zr9adcegafrc0yr8juke7t7rsre5";
+  const h = DEPOSIT_REQUIRED_FROM + 10;
+  const dep = (who: string): QledgerEntry => ({ height: h, poster: `deposit:${who}`, payload: encodeQledgerDeposit(P.accountId, CLAIM_DEPOSIT_UQOR) });
+  const st = emptyState();
+  readPosts(
+    st,
+    [reg(), ...flightPosts(recs), dep(VICTIM), { height: h, poster: VICTIM, payload: claimPost({ flight: "F1", note: "hit", payTo: OWN }) }, dep(CREATOR), { height: h, poster: CREATOR, payload: claimPost({ flight: "F1", note: "x", payTo: "qor1notreal" }) }],
+    CREATOR,
+    { poolAccount: hex(P.accountId) },
+  );
+  assert.equal(st.claims.length, 1);
+  assert.ok(st.rejectedPosts.some((r) => r.includes("not a payable")));
+  const out = decide(st, (f) => judgeFlight(st, f, ENV, member)?.verdict, 50n * QOR, 5n * QOR);
+  assert.deepEqual(out.map((p) => [p.recipient, p.amount]), [[OWN, 6n * QOR]]);
+  assert.equal(st.claims[0].victim, VICTIM);
+});
+
 /* ---------- the payout audit ---------- */
 
 test("the audit matches each pool payout to what was owed, and flags one that wasn't", () => {

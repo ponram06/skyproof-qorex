@@ -58,6 +58,8 @@ export interface ClaimState {
   drone?: string;
   /** True when the operator published no record of the flight within RECORD_GRACE_BLOCKS. */
   missing?: boolean;
+  /** Where the payout goes, when the claimant named an address other than their own. */
+  payTo?: string;
 }
 
 export interface WatchState {
@@ -124,6 +126,11 @@ export function readPosts(st: WatchState, entries: QledgerEntry[], creator: stri
         continue;
       }
       if (st.claims.some((c) => c.flight === claim.flight && c.victim === e.poster)) continue;
+      // A payout address the ledger could never pay would lock the payout: refuse the claim up front.
+      if (claim.payTo !== undefined && !isCanonicalQorAddress(claim.payTo)) {
+        st.rejectedPosts.push(`claim from ${e.poster} on ${claim.flight}: payout address ${claim.payTo} is not a payable qor1 address`);
+        continue;
+      }
       // The deposit is posted in the same transaction, just before the claim, so its credit is already counted.
       const credit = BigInt(st.credits[e.poster] ?? "0");
       const legacy = Number(e.height) < DEPOSIT_REQUIRED_FROM;
@@ -144,6 +151,7 @@ export function readPosts(st: WatchState, entries: QledgerEntry[], creator: stri
         ...(claim.where ? { where: claim.where } : {}),
         ...(claim.evidence ? { evidence: claim.evidence } : {}),
         ...(claim.drone ? { drone: claim.drone } : {}),
+        ...(claim.payTo && claim.payTo !== e.poster ? { payTo: claim.payTo } : {}),
       });
       continue;
     }
@@ -242,7 +250,7 @@ export function decide(
     if (left < amount) return; // pool short: the claim keeps its status and waits
     left -= amount;
     c.status = "paid";
-    out.push({ recipient: c.victim, amount, reason });
+    out.push({ recipient: c.payTo ?? c.victim, amount, reason });
   };
   for (const c of st.claims.filter((x) => x.status === "open")) {
     const v = judgeOne(c.flight);

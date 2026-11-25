@@ -9,6 +9,9 @@
  *          Filed in one transaction with a 1 QOR deposit into the claims pool.
  *          `evidence` is the SHA-256 of a photo the victim keeps, so the file
  *          they later show the insurer is provably the one they filed.
+ *          `payTo` (optional) sends the payout and the deposit refund to
+ *          another qor1 address, e.g. the victim's own wallet, when the
+ *          claim was signed by a wallet made just for filing it.
  *   DECIDE "SKYI1" | json {flight, victim, approve, reason}
  *          The insurer's decision on a claim the rules sent to review. Only a
  *          post by the insurer's address counts.
@@ -65,6 +68,8 @@ export interface Claim {
   evidence?: string;
   /** The drone the victim saw (its ID, as painted on it or broadcast by Remote ID). */
   drone?: string;
+  /** Where the payout goes, if not the address that filed the claim. */
+  payTo?: string;
 }
 export const claimPost = (c: Claim) => concat(CLAIM_MAGIC, enc.encode(JSON.stringify(c)));
 export function parseClaim(p: Uint8Array): Claim | undefined {
@@ -79,6 +84,7 @@ export function parseClaim(p: Uint8Array): Claim | undefined {
     ...(str(j.where, 200) ? { where: str(j.where, 200) } : {}),
     ...(evidence && /^[0-9a-f]{64}$/.test(evidence) ? { evidence } : {}),
     ...(str(j.drone, 64) ? { drone: str(j.drone, 64) } : {}),
+    ...(str(j.payTo, 128) ? { payTo: str(j.payTo, 128) } : {}),
   };
 }
 
