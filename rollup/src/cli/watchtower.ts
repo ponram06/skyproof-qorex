@@ -97,12 +97,14 @@ async function once() {
   let nonce = onLedger.nonce + BigInt(st.pending.length);
 
   const member = { address: (await account("investigator")).address, decapsulationKey: kemKey("investigator").seed };
-  const payouts = decide(st.watch, (f) => judgeFlight(st.watch, f, env, member)?.verdict, available, PAYOUT_UQOR);
+  const tip = await rdk.getChainTip();
+  const payouts = decide(st.watch, (f) => judgeFlight(st.watch, f, env, member)?.verdict, available, PAYOUT_UQOR, tip.height);
   for (const p of payouts) {
     const tx = txLine(`paid ${toQor(p.amount)} QOR to ${p.recipient} (${p.reason})`, await judge.rdkTx.postRollupData({ rollupId: ROLLUP_ID, data: withdrawTx(env, pool, nonce, p.recipient, p.amount) }, { fee: "auto" }));
     st.pending.push({ nonce: nonce.toString(), amount: p.amount.toString(), recipient: p.recipient, reason: p.reason, tx });
     nonce++;
   }
+  for (const c of st.watch.claims) if (c.missing) console.log(`claim ${c.flight} by ${c.victim}: ${c.status} (no record published)`);
   for (const c of st.watch.claims) if (c.verdict) console.log(`claim ${c.flight} by ${c.victim}: ${c.status}${c.verdict.findings.length ? ` [${[...new Set(c.verdict.findings.map((f) => f.rule))].join(", ")}]` : ""}`);
   console.log(`pool: ${toQor(onLedger.balance)} QOR on the ledger, ${st.pending.length} payout(s) waiting for a batch`);
   save("watchtower", st);

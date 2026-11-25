@@ -63,6 +63,8 @@ export interface Claim {
   where?: string;
   /** SHA-256 (hex) of a photo the victim keeps as evidence. */
   evidence?: string;
+  /** The drone the victim saw (its ID, as painted on it or broadcast by Remote ID). */
+  drone?: string;
 }
 export const claimPost = (c: Claim) => concat(CLAIM_MAGIC, enc.encode(JSON.stringify(c)));
 export function parseClaim(p: Uint8Array): Claim | undefined {
@@ -76,6 +78,7 @@ export function parseClaim(p: Uint8Array): Claim | undefined {
     ...(str(j.when, 64) ? { when: str(j.when, 64) } : {}),
     ...(str(j.where, 200) ? { where: str(j.where, 200) } : {}),
     ...(evidence && /^[0-9a-f]{64}$/.test(evidence) ? { evidence } : {}),
+    ...(str(j.drone, 64) ? { drone: str(j.drone, 64) } : {}),
   };
 }
 

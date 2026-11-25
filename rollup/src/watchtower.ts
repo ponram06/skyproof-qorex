@@ -30,6 +30,14 @@ export const CLAIM_DEPOSIT_UQOR = 1_000_000n;
  * From this block on, a claim without its deposit is refused.
  */
 export const DEPOSIT_REQUIRED_FROM = 10_665_000;
+/**
+ * How long the operator has to publish a claimed flight: 900 blocks, about
+ * 30 minutes at QoreChain's 2 s blocks. A claim on a flight that still has no
+ * record after that goes to the insurer marked "no record", so withholding a
+ * whole flight neither dodges the claim nor leaves it open forever (an open
+ * claim holds back bond exits, so it must always reach a decision).
+ */
+export const RECORD_GRACE_BLOCKS = 900;
 
 export type ClaimStatus = "open" | "review" | "paid" | "rejected";
 export interface ClaimState {
@@ -46,6 +54,10 @@ export interface ClaimState {
   evidence?: string;
   /** The insurer's decision, once a reviewed claim is decided. */
   decision?: { approve: boolean; reason: string };
+  /** The drone the victim named (optional). */
+  drone?: string;
+  /** True when the operator published no record of the flight within RECORD_GRACE_BLOCKS. */
+  missing?: boolean;
 }
 
 export interface WatchState {
@@ -131,6 +143,7 @@ export function readPosts(st: WatchState, entries: QledgerEntry[], creator: stri
         ...(claim.when ? { when: claim.when } : {}),
         ...(claim.where ? { where: claim.where } : {}),
         ...(claim.evidence ? { evidence: claim.evidence } : {}),
+        ...(claim.drone ? { drone: claim.drone } : {}),
       });
       continue;
     }
@@ -207,6 +220,9 @@ export interface Payout {
  *  - an open claim on a breached flight is paid `payoutUqor` plus its deposit back;
  *  - an open claim on a flight with no breach goes to the insurer for review
  *    (claims filed before deposits existed are simply rejected);
+ *  - an open claim on a flight the operator has not published RECORD_GRACE_BLOCKS
+ *    after the claim (`now` is the chain height) goes to the insurer marked
+ *    "no record";
  *  - a reviewed claim the insurer approved is paid the same way; one it rejected
  *    gets nothing, and its deposit stays in the pool.
  * A bond exit is paid only when no claim is open or in review, and never more
@@ -217,6 +233,7 @@ export function decide(
   judgeOne: (flight: string) => Verdict | undefined,
   poolBalance: bigint,
   payoutUqor: bigint,
+  now?: number,
 ): Payout[] {
   const out: Payout[] = [];
   let left = poolBalance;
@@ -229,7 +246,15 @@ export function decide(
   };
   for (const c of st.claims.filter((x) => x.status === "open")) {
     const v = judgeOne(c.flight);
-    if (!v) continue; // flight not published yet: keep waiting
+    if (!v) {
+      // Not published yet: wait, but not forever.
+      if (now !== undefined && c.height !== undefined && now - c.height >= RECORD_GRACE_BLOCKS) {
+        c.missing = true;
+        c.status = BigInt(c.deposit ?? "0") > 0n ? "review" : "rejected";
+      }
+      continue;
+    }
+    c.missing = undefined;
     c.verdict = v;
     if (v.breach) pay(c, `${c.flight}: ${[...new Set(v.findings.map((f) => f.rule))].join(", ")}`);
     else c.status = BigInt(c.deposit ?? "0") > 0n ? "review" : "rejected";

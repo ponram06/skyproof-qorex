@@ -6,7 +6,7 @@ import { claimPost, decisionPost, droneRegPost, exitPost } from "../flight/posts
 import { sealSegment } from "../flight/segment.js";
 import { executeBatch, QledgerLedger, withdrawTx } from "../ledger.js";
 import { hex } from "../util.js";
-import { CLAIM_DEPOSIT_UQOR, decide, DEPOSIT_REQUIRED_FROM, emptyState, judgeFlight, readPosts } from "../watchtower.js";
+import { CLAIM_DEPOSIT_UQOR, decide, DEPOSIT_REQUIRED_FROM, emptyState, judgeFlight, readPosts, RECORD_GRACE_BLOCKS } from "../watchtower.js";
 import { cleanFlight, DRONE, ENV, fixedRandom, INVESTIGATOR, PERMIT, RECIPIENTS } from "./fixtures.js";
 
 const CREATOR = "qor1crs332umw4zr9adcegafrc0yr8juke7t7rsre5";
@@ -89,6 +89,36 @@ test("a bond exit waits for open claims, then the payout is a real ledger withdr
     { height: 2, poster: "qor1judge", payload: withdrawTx(ENV, pool, 0n, CREATOR, a.payouts[0].amount) },
   ]);
   assert.equal(result.withdrawals[0].amount, 20n * QOR);
+});
+
+/* ---------- a claimed flight the operator never publishes ---------- */
+
+test("a claim on a flight with no record waits, then goes to the insurer marked missing", () => {
+  const st = emptyState();
+  const P = qledgerKeypairFromSeed(new Uint8Array(32).fill(5));
+  const h = DEPOSIT_REQUIRED_FROM + 10;
+  readPosts(
+    st,
+    [
+      { height: h, poster: `deposit:${VICTIM}`, payload: encodeQledgerDeposit(P.accountId, CLAIM_DEPOSIT_UQOR) },
+      { height: h, poster: VICTIM, payload: claimPost({ flight: "SKY-001@2026-11-24T10:00", note: "hit", drone: "SKY-001", when: "2026-11-24T10:00" }) },
+      { height: h + 1, poster: CREATOR, payload: exitPost(20n * QOR) },
+    ],
+    CREATOR,
+    { poolAccount: hex(P.accountId), insurer: "qor1insurer" },
+  );
+  assert.equal(st.claims[0].drone, "SKY-001");
+  // Inside the grace period: still open, and the operator's exit waits.
+  assert.equal(decide(st, () => undefined, 50n * QOR, 5n * QOR, h + RECORD_GRACE_BLOCKS - 1).length, 0);
+  assert.equal(st.claims[0].status, "open");
+  // After it: the insurer decides, and the exit still waits for that decision.
+  assert.equal(decide(st, () => undefined, 50n * QOR, 5n * QOR, h + RECORD_GRACE_BLOCKS).length, 0);
+  assert.equal(st.claims[0].status, "review");
+  assert.equal(st.claims[0].missing, true);
+  readPosts(st, [{ height: h + 2000, poster: "qor1insurer", payload: decisionPost({ flight: "SKY-001@2026-11-24T10:00", victim: VICTIM, approve: true, reason: "no record for a drone seen by witnesses" }) }], CREATOR, { insurer: "qor1insurer" });
+  const out = decide(st, () => undefined, 50n * QOR, 5n * QOR, h + 2000);
+  assert.deepEqual(out.map((p) => p.amount), [6n * QOR, 20n * QOR]);
+  assert.equal(out[1].reason, "operator bond exit");
 });
 
 /* ---------- deposits and insurer review (claims from DEPOSIT_REQUIRED_FROM on) ---------- */
