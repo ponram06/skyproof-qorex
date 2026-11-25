@@ -154,17 +154,31 @@ function quadcopter() {
 }
 
 /** What the caption card says for an event. */
-function caption(r: Rec, finding?: { rule: string; detail: string }): { title: string; body: string; tone: "ok" | "warn" | "bad" | "info" } | undefined {
-  if (finding) {
-    const titles: Record<string, string> = {
-      B1_GEOFENCE: "Rule broken: flew into a no-fly zone",
-      B2_ALTITUDE: "Rule broken: flew too high",
-      B3_UNAPPROVED_ACTION: "Rule broken: didn't ask permission",
-      B4_OVERRIDE: "Rule broken: ignored a \"No\"",
-      B5_RECORD_BROKEN: "Rule broken: record tampered with",
-      B6_WIND: "Rule broken: flew in unsafe wind",
-    };
-    return { title: titles[finding.rule] ?? finding.rule, body: `${finding.detail}. The victim will be paid from the operator's deposit.`, tone: "bad" };
+const BROKE: Record<string, string> = {
+  B1_GEOFENCE: "flew into a no-fly zone",
+  B2_ALTITUDE: "flew too high",
+  B3_UNAPPROVED_ACTION: "acted without asking the safety check",
+  B4_OVERRIDE: "ignored the safety check's \"No\"",
+  B5_RECORD_BROKEN: "the record was tampered with",
+  B6_WIND: "took off in unsafe wind",
+};
+/** Plain-language explanation of a finding's detail. */
+function plain(f: { rule: string; detail: string }) {
+  const act = (a: string) => ({ TAKEOFF: "took off", DROP: "dropped the parcel", LAND: "landed" })[a] ?? a.toLowerCase();
+  let m = f.detail.match(/^(\w+) after the safety model said DENY/);
+  if (m) return `The safety check said "No", but the operator ${act(m[1])} anyway.`;
+  m = f.detail.match(/^took off in ([\d.]+) m\/s wind \(limit ([\d.]+)\)/);
+  if (m) return `Wind was ${m[1]} m/s; the permit allows take-off only up to ${m[2]} m/s.`;
+  m = f.detail.match(/^(\w+) with no safety decision/);
+  if (m) return `The drone ${act(m[1])} without asking the safety check first.`;
+  return f.detail[0].toUpperCase() + f.detail.slice(1) + ".";
+}
+
+function caption(r: Rec, finding?: { rule: string; detail: string } | { rule: string; detail: string }[]): { title: string; body: string; tone: "ok" | "warn" | "bad" | "info" } | undefined {
+  const fs = finding ? (Array.isArray(finding) ? finding : [finding]) : [];
+  if (fs.length) {
+    const rules = [...new Set(fs.map((f) => BROKE[f.rule] ?? f.rule))];
+    return { title: `Rule broken: ${rules.join(" + ")}`, body: `${[...new Set(fs.map(plain))].join(" ")} This is saved in the signed record, so the victim gets paid.`, tone: "bad" };
   }
   if (r.k === "DECISION") {
     if (r.act === "TAKEOFF") return r.ok ? { title: "Safe to take off", body: "The drone asked its safety check first, and got a \"Yes\".", tone: "ok" } : { title: "Too windy to take off", body: "The safety check says \"No\". A safe drone stays on the ground.", tone: "warn" };
@@ -194,6 +208,14 @@ export function mountArena(root: HTMLElement, recs: Rec[], permit: Permit, verdi
           <button data-cam="follow" class="on">Follow drone</button><button data-cam="orbit">Free look</button><button data-cam="top">From above</button>
         </div>
       </div>
+      <div class="arena-legend">
+        <span><i style="background:#2fbf71"></i>Green beam: safety check said <b>Yes</b></span>
+        <span><i style="background:#ff9f1c"></i>Orange beam: safety check said <b>No</b></span>
+        <span><i style="background:#ff3b30"></i>Red beam: <b>a rule was broken here</b></span>
+        <span><i style="background:#6d4cff"></i>Purple: the drone's route and allowed area</span>
+      </div>
+      <div class="arena-steps-h">What happens, step by step <span>(click a step to jump to it)</span></div>
+      <ol class="arena-steps"></ol>
     </div>`;
   const q = <T extends Element>(s: string) => root.querySelector<T>(s)!;
   const view = q<HTMLElement>(".arena-view");
@@ -444,7 +466,8 @@ export function mountArena(root: HTMLElement, recs: Rec[], permit: Permit, verdi
   scene.add(atPad);
 
   // Gate decisions and breaches as timed events.
-  const findings = new Map(verdict.findings.filter((f) => f.seq !== undefined).map((f) => [f.seq!, f]));
+  const findings = new Map<number, typeof verdict.findings>();
+  for (const f of verdict.findings) if (f.seq !== undefined) findings.set(f.seq, [...(findings.get(f.seq) ?? []), f]);
   type Ev = { r: Rec; t: number; cap?: ReturnType<typeof caption>; beacon?: THREE.Object3D; bad: boolean; done: boolean };
   const events: Ev[] = recs
     .filter((r) => r.k === "DECISION" || r.k === "ACTION" || findings.has(r.seq))
@@ -462,6 +485,36 @@ export function mountArena(root: HTMLElement, recs: Rec[], permit: Permit, verdi
       }
       return ev;
     });
+
+  // ---- step list: every captioned moment, repeats folded into one row -----------------------
+  type Step = { t: number; title: string; body: string; tone: string; n: number; evs: Ev[] };
+  const steps: Step[] = [];
+  for (const e of events) {
+    if (!e.cap) continue;
+    const lastStep = steps[steps.length - 1];
+    if (lastStep && lastStep.title === e.cap.title && !e.bad) {
+      lastStep.n++;
+      lastStep.evs.push(e);
+    } else steps.push({ t: e.t, title: e.cap.title, body: e.cap.body, tone: e.cap.tone, n: 1, evs: [e] });
+  }
+  const stepList = q<HTMLOListElement>(".arena-steps");
+  stepList.innerHTML = steps
+    .map(
+      (st, k) => `<li class="tone-${st.tone}" data-step="${k}"><span class="arena-step-t">${Math.round((st.t - t0) / 1000)} s</span><span><b>${st.title}</b>${st.n > 1 ? ` <em>(${st.n} times)</em>` : ""}<span class="arena-step-b">${st.body}</span></span></li>`,
+    )
+    .join("");
+  let shownStep = -1;
+  const markStep = (e: Ev) => {
+    const k = steps.findIndex((st) => st.evs.includes(e));
+    if (k < 0 || k === shownStep) return;
+    shownStep = k;
+    stepList.querySelectorAll("li").forEach((li, j) => {
+      li.classList.toggle("now", j === k);
+      li.classList.toggle("past", j < k);
+    });
+    const li = stepList.children[k] as HTMLElement | undefined;
+    if (li) stepList.scrollTop = li.offsetTop - stepList.offsetTop - 40;
+  };
 
   // ---- camera + resize ----------------------------------------------------------------
   let camMode: "follow" | "orbit" | "top" = "follow";
@@ -490,6 +543,13 @@ export function mountArena(root: HTMLElement, recs: Rec[], permit: Permit, verdi
   let playing = opts.autoplay !== false;
   let speed = 20;
   let flash = 0;
+  /** Real-time moment until which playback holds still, so a broken rule can be read. */
+  let holdUntil = 0;
+  const firstBad = verdict.findings[0];
+  const allBroke = [...new Set(verdict.findings.map((f) => BROKE[f.rule] ?? f.rule))];
+  const summary = verdict.breach
+    ? { title: "Flight over: a rule was broken", body: `The operator ${firstBad ? allBroke.join(" and ") : "broke a safety rule"}. The signed record proves it, so the victim is paid from the operator's deposit.`, tone: "bad" }
+    : { title: "Flight over: every rule followed", body: "The drone asked before every risky move and obeyed every answer. Nothing to pay.", tone: "ok" };
   const play = q<HTMLButtonElement>(".arena-play");
   const slider = q<HTMLInputElement>(".arena-time");
   play.textContent = playing ? "Pause" : "Play";
@@ -499,6 +559,13 @@ export function mountArena(root: HTMLElement, recs: Rec[], permit: Permit, verdi
     play.textContent = playing ? "Pause" : "Play";
   };
   slider.oninput = () => seek(t0 + ((t1 - t0) * Number(slider.value)) / 1000);
+  stepList.querySelectorAll<HTMLLIElement>("[data-step]").forEach((li) =>
+    li.addEventListener("click", () => {
+      seek(Math.max(t0, steps[Number(li.dataset.step)].t - 1500));
+      playing = true;
+      play.textContent = "Pause";
+    }),
+  );
   root.querySelectorAll<HTMLButtonElement>("[data-speed]").forEach((b) =>
     (b.onclick = () => {
       speed = Number(b.dataset.speed);
@@ -523,6 +590,9 @@ export function mountArena(root: HTMLElement, recs: Rec[], permit: Permit, verdi
 
   function seek(t: number) {
     simT = t;
+    holdUntil = 0;
+    shownStep = -1;
+    stepList.querySelectorAll("li").forEach((li) => li.classList.remove("now", "past"));
     for (const e of events) {
       e.done = false;
       if (e.beacon) e.beacon.visible = false;
@@ -538,10 +608,15 @@ export function mountArena(root: HTMLElement, recs: Rec[], permit: Permit, verdi
   const frame = (now: number) => {
     const dt = Math.min(0.1, (now - last) / 1000);
     last = now;
-    if (playing) simT = Math.min(t1, simT + dt * 1000 * speed);
-    if (simT >= t1 && playing) {
+    if (holdUntil && now >= holdUntil) {
+      holdUntil = 0;
+      q<HTMLElement>(".arena-cap-k").textContent = "Rule broken here. Playing on…";
+    }
+    if (playing && now >= holdUntil) simT = Math.min(t1, simT + dt * 1000 * speed);
+    if (simT >= t1 && playing && now >= holdUntil && events.every((e) => e.done)) {
       playing = false;
       play.textContent = "Replay";
+      setCaption("End of flight", summary.title, summary.body, summary.tone);
       opts.onEnd?.();
     }
     const { p, i } = at(simT);
@@ -581,14 +656,20 @@ export function mountArena(root: HTMLElement, recs: Rec[], permit: Permit, verdi
     }
 
     for (const e of events) {
+      if (now < holdUntil) break; // keep the broken rule on screen
       if (e.done || e.t > simT) continue;
       e.done = true;
       if (e.beacon) e.beacon.visible = true;
+      if (e.cap) {
+        setCaption(e.bad ? "Paused: this is the moment" : `${Math.round((e.t - t0) / 1000)} s into the flight`, e.cap.title, e.cap.body, e.cap.tone);
+        markStep(e);
+      }
       if (e.bad) {
         flash = 1;
         opts.onBreach?.();
+        if (playing) holdUntil = now + 4000; // hold 4 s on the breach
+        break;
       }
-      if (e.cap) setCaption(`${Math.round((e.t - t0) / 1000)} s into the flight`, e.cap.title, e.cap.body, e.cap.tone);
     }
     flash = Math.max(0, flash - dt * 0.7);
     glow.intensity = flash * 60;
