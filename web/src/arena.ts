@@ -741,6 +741,20 @@ export function mountArena(root: HTMLElement, recs: Rec[], permit: Permit, verdi
     const vel = p.clone().sub(prev);
     if (vel.lengthSq() > 1e-4) drone.rotation.y = Math.atan2(-vel.z, vel.x);
     drone.rotation.z = flying ? Math.min(0.18, vel.length() * 0.6) * -1 : 0;
+    // Wind: the drone is pushed about, more as the wind grows; past the permit's limit it lurches in gusts.
+    if (flying) {
+      const w = track[Math.min(i, track.length - 1)].wind;
+      const k = Math.max(0, (w - 5) / 10); // 0 when calm, ~1 at 15 m/s
+      const over = w > permit.maxWindMs ? 1 : 0;
+      const gust = over * Math.max(0, Math.sin(now / 900)) ** 6; // a sharp shove every few seconds
+      const n1 = Math.sin(now / 97) + 0.6 * Math.sin(now / 41 + 1.3);
+      const n2 = Math.sin(now / 113 + 2.1) + 0.6 * Math.sin(now / 37);
+      drone.position.x += k * (0.5 * n1 + 3 * gust);
+      drone.position.z += k * 0.5 * n2;
+      drone.position.y += k * 0.4 * Math.sin(now / 71) - gust * 1.2;
+      drone.rotation.z += k * (0.12 * n1) - gust * 0.45;
+      drone.rotation.x = k * 0.12 * n2;
+    } else drone.rotation.x = 0;
     prev.copy(p);
     q4.props.forEach((r, k) => (r.rotation.y += (flying ? 1.4 : 0.15) * (k % 2 ? 1 : -1)));
     q4.body.position.y = flying ? Math.sin(now / 260) * 0.06 : 0;
