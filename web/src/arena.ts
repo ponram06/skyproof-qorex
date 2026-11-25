@@ -253,6 +253,12 @@ export function mountArena(root: HTMLElement, recs: Rec[], permit: Permit, verdi
   const dropPad = dropAct ? at(dropAct.t).p.setY(0) : dropDecisions[0] ? at(dropDecisions[0].t).p.setY(0) : undefined;
   const lastAllow = [...dropDecisions].reverse().find((d) => d.ok);
   const personLeaves = dropDecisions.some((d) => !d.ok) ? (lastAllow ? lastAllow.t : Infinity) : -Infinity;
+  // A safe wait: the person walks off BEFORE the safety check says "Yes", and is clear when it does.
+  const firstDeny = dropDecisions.find((d) => !d.ok);
+  const lastDeny = [...dropDecisions].reverse().find((d) => !d.ok);
+  const waits = !!firstDeny && !!lastAllow && lastAllow.t > firstDeny.t;
+  const walkEnd = waits ? lastAllow!.t - 600 : Infinity;
+  const walkStart = waits ? Math.max(lastDeny!.t + 800, walkEnd - 6000) : Infinity;
 
   // ---- scene ------------------------------------------------------------------------
   const scene = new THREE.Scene();
@@ -466,6 +472,14 @@ export function mountArena(root: HTMLElement, recs: Rec[], permit: Permit, verdi
   const link = new THREE.Line(linkGeo, linkMat);
   scene.add(link);
   const linkLostAt = recs.find((r) => r.k === "ACTION" && r.act === "SAFE_STOP")?.t;
+  const waitSign = sprite("WAITING: SOMEONE IS BELOW", "#ffb44d");
+  waitSign.scale.set(3.5 * (waitSign.scale.x / 8), 3.5, 1);
+  waitSign.visible = false;
+  scene.add(waitSign);
+  const clearSign = sprite("CLEAR: SAFE TO DROP", "#3ddc84");
+  clearSign.scale.set(3.5 * (clearSign.scale.x / 8), 3.5, 1);
+  clearSign.visible = false;
+  scene.add(clearSign);
   const lostSign = sprite("SIGNAL LOST", "#ff6b5e");
   lostSign.scale.set(3.25 * (lostSign.scale.x / 8), 3.25, 1);
   lostSign.visible = false;
@@ -766,8 +780,9 @@ export function mountArena(root: HTMLElement, recs: Rec[], permit: Permit, verdi
       holdUntil = 0;
       q<HTMLElement>(".arena-cap-k").textContent = "Rule broken here. Playing on…";
     }
-    const slowmo = (accident && simT > dropAct!.t - 2500 && simT < HIT_AT + 1500) || (windHit && simT > dropAct!.t - 2500 && simT < CAR_AT + 1500);
-    if (playing && now >= holdUntil) simT = Math.min(t1, simT + dt * 1000 * (slowmo ? 1 : speed));
+    const slowWait = waits && simT > firstDeny!.t - 2000 && simT < (dropAct ? dropAct.t + 2500 : walkEnd);
+    const slowmo = slowWait || (accident && simT > dropAct!.t - 2500 && simT < HIT_AT + 1500) || (windHit && simT > dropAct!.t - 2500 && simT < CAR_AT + 1500);
+    if (playing && now >= holdUntil) simT = Math.min(t1, simT + dt * 1000 * (slowmo ? (slowWait ? 2.5 : 1) : speed));
     if (simT >= t1 && playing && now >= holdUntil && events.every((e) => e.done)) {
       playing = false;
       play.textContent = "Replay";
@@ -831,17 +846,31 @@ export function mountArena(root: HTMLElement, recs: Rec[], permit: Permit, verdi
 
     // The person at the drop pad leaves when the gate clears.
     if (dropPad) {
-      const leaving = simT >= personLeaves;
-      atPad.visible = simT > t0 && (simT < personLeaves + 9000);
-      if (leaving) {
-        const k = Math.min(1, (simT - personLeaves) / 9000);
-        atPad.position.set(dropPad.x + 2.5 + k * 22, 0.65, dropPad.z + 1.5 + k * 8);
-        atPad.rotation.y = -Math.PI / 2.5;
+      if (waits) {
+        // stands at the drop point, then walks clear (with a stepping bob) before the "Yes"
+        atPad.visible = simT > t0 && simT < walkEnd + 8000;
+        const k = Math.min(1, Math.max(0, (simT - walkStart) / (walkEnd - walkStart)));
+        const walking = k > 0 && k < 1;
+        atPad.position.set(dropPad.x + 1.5 + k * 16, 0.65 + (walking ? Math.abs(Math.sin(now / 120)) * 0.35 : 0), dropPad.z + 1 + k * 6);
+        atPad.rotation.y = k > 0 ? -Math.PI / 2.5 : 0;
+        const dp = drone.position;
+        waitSign.visible = simT >= firstDeny!.t && simT < lastAllow!.t;
+        waitSign.position.set(dp.x, dp.y + 8, dp.z);
+        clearSign.visible = simT >= lastAllow!.t && (!dropAct || simT < dropAct.t + 2500);
+        clearSign.position.set(dp.x, dp.y + 8, dp.z);
+      } else {
+        const leaving = simT >= personLeaves;
+        atPad.visible = simT > t0 && (simT < personLeaves + 9000);
+        if (leaving) {
+          const k = Math.min(1, (simT - personLeaves) / 9000);
+          atPad.position.set(dropPad.x + 2.5 + k * 22, 0.65, dropPad.z + 1.5 + k * 8);
+          atPad.rotation.y = -Math.PI / 2.5;
+        }
       }
     }
     // Person below: ring + label while they stand there; hit if the parcel lands on them.
     if (dropPad) {
-      const there = atPad.visible && simT < personLeaves;
+      const there = atPad.visible && simT < (waits ? walkEnd : personLeaves);
       const hit = accident && simT > HIT_AT;
       const fall = hit ? Math.min(1, (simT - HIT_AT) / 900) : 0;
       padRing.visible = there || hit;
@@ -921,9 +950,9 @@ export function mountArena(root: HTMLElement, recs: Rec[], permit: Permit, verdi
     sun.position.set(drone.position.x + 60, 140, drone.position.z + 40);
     sun.target.position.copy(drone.position);
 
-    const watchAccident = camMode === "follow" && ((accident && simT > dropAct!.t - 2500 && simT < HIT_AT + 4000) || (windHit && simT > dropAct!.t - 2500 && simT < CAR_AT + 4000));
+    const watchAccident = camMode === "follow" && (slowWait || (accident && simT > dropAct!.t - 2500 && simT < HIT_AT + 4000) || (windHit && simT > dropAct!.t - 2500 && simT < CAR_AT + 4000));
     if (watchAccident) {
-      const pp = windHit ? parked.position : atPad.position;
+      const pp = windHit ? parked.position : slowWait && dropPad ? dropPad : atPad.position;
       camera.position.lerp(new THREE.Vector3(pp.x + 26, pp.y + 34, pp.z + 26), 0.06); // from the side and above: the drone doesn't cover the person
       controls.target.lerp(new THREE.Vector3(pp.x, pp.y + 2, pp.z), 0.1);
     } else if (camMode === "follow") {
