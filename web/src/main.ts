@@ -26,7 +26,7 @@ interface Data {
   posts: { batch: number; seq: number; height: number; poster: string; kind: string; detail: string }[];
   fraud?: { tx: string; height: number; batch: string; challenger: string; slashed: string; burned: string }[];
   withdrawalsExecuted?: Record<string, string>;
-  claims: { flight: string; victim: string; note: string; status: string; verdict?: Verdict; deposit?: string; height?: number; when?: string; where?: string; evidence?: string; decision?: { approve: boolean; reason: string }; drone?: string; missing?: boolean }[];
+  claims: { flight: string; victim: string; note: string; status: string; verdict?: Verdict; deposit?: string; height?: number; when?: string; where?: string; evidence?: string; decision?: { approve: boolean; reason: string }; drone?: string; missing?: boolean; payTo?: string }[];
   claimsPool?: { account: string; depositUqor: string; payoutUqor: string };
   insurer?: string;
   watchtower?: { batch: number; valid: boolean; note: string }[];
@@ -368,7 +368,7 @@ function claimsPage() {
   return `
   <section class="wrap page">
     <div class="head"><h1>File a claim</h1><p>Hurt by a drone, or your things damaged? Claim here. If the drone broke a safety rule you're paid automatically: 5 QOR plus your 1 QOR deposit back. If not, an insurer looks at your proof. A false claim loses its deposit.</p></div>
-    ${guide("People hurt by a drone", ["<b>Get a claim wallet</b> (made in your browser) and add 2 test QOR.", "<b>Click where it happened</b> on the map and say when. The page finds the drone that was there.", "<b>Say what happened</b>, add a photo if you have one, and file. Check back below with your address."])}
+    ${guide("People hurt by a drone", ["<b>Paste your wallet address</b> (your payout goes there), then send 1.1 test QOR to the filing address the page shows.", "<b>Click where it happened</b> on the map and say when. The page finds the drone that was there.", "<b>Say what happened</b>, add a photo if you have one, and file. Check back below with your address."])}
     <section class="card file" id="file" aria-labelledby="fileTitle">
       <div class="file-head"><h2 id="fileTitle">File a claim</h2><span class="muted">Signed with a quantum-safe key (ML-DSA-87), straight from this page.</span></div>
       <div id="fileBox"></div>
@@ -418,7 +418,7 @@ function claimsReady() {
       out.innerHTML = `<p class="alert">That doesn't look like a QoreChain address. It starts with <b>qor1</b>.</p>`;
       return;
     }
-    const mine = data.claims.filter((c) => c.victim === addr);
+    const mine = data.claims.filter((c) => c.victim === addr || c.payTo === addr);
     $$(`tr[data-victim="${CSS.escape(addr)}"]`).forEach((tr) => tr.classList.add("hit"));
     const paid = mine.filter((c) => c.status === "paid").length;
     let balance = "";
@@ -456,25 +456,54 @@ function claimsReady() {
 
 /* ---------- file a claim (wallet.ts) ---------- */
 
+const PAY_KEY = "skyproof.payTo";
+const savedPayTo = () => {
+  try {
+    return localStorage.getItem(PAY_KEY) ?? "";
+  } catch {
+    return "";
+  }
+};
+const QOR_ADDR = /^qor1[02-9ac-hj-np-z]{38,90}$/;
+
 function renderFileBox(w: ClaimWallet | undefined, flight?: string) {
   clearInterval(walletPoll);
   const box = $("#fileBox");
   if (!w) {
     box.innerHTML = `
       <ol class="file-steps">
-        <li class="on"><b>Get a claim wallet.</b> It's created in this browser and is where your payout goes.</li>
-        <li><b>Add ${CLAIM_FUNDS_QOR} test QOR:</b> a 1 QOR refundable deposit plus the network fee.</li>
-        <li><b>Pick the flight, say what happened, and add your proof.</b></li>
+        <li class="on"><b>Paste your QoreChain address.</b> Your payout and your deposit refund go there. No recovery phrase needed.</li>
+        <li><b>Send ${CLAIM_FUNDS_QOR} test QOR</b> to the filing address shown next: a 1 QOR deposit (refunded with your payout) plus the network fee.</li>
+        <li><b>Click where it happened, say what happened, and file.</b></li>
       </ol>
-      <div class="file-actions"><button class="btn primary" id="wNew">Create my claim wallet</button><button class="btn" id="wHave">I have a recovery phrase</button></div>
+      <form id="wStart" class="lookup-row start-row"><input id="wPay" placeholder="qor1… your wallet address" autocomplete="off" spellcheck="false" value="${esc(savedPayTo())}" /><button class="btn primary">Continue</button></form>
+      <p class="tiny muted">No wallet of your own? <button type="button" class="linkbtn" id="wNew">Keep the payout in a wallet this page makes</button> · <button type="button" class="linkbtn" id="wHave">Restore an earlier filing wallet</button></p>
       <form id="wRestore" class="file-restore" hidden>
         <label for="wWords" class="muted">Your 24 recovery words</label>
         <textarea id="wWords" rows="2" autocomplete="off" spellcheck="false"></textarea>
         <button class="btn">Restore</button>
       </form>
       <div id="fileOut" aria-live="polite"></div>`;
+    $("#wStart").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const a = $<HTMLInputElement>("#wPay").value.trim().toLowerCase();
+      if (!QOR_ADDR.test(a)) {
+        $("#fileOut").innerHTML = `<p class="alert">That doesn't look like a QoreChain address. It starts with <b>qor1</b>.</p>`;
+        return;
+      }
+      try {
+        localStorage.setItem(PAY_KEY, a);
+      } catch {
+        /* remembered only as a convenience */
+      }
+      renderFileBox(await createWallet(), flight);
+    });
     $("#wNew").onclick = async () => {
-      $<HTMLButtonElement>("#wNew").disabled = true;
+      try {
+        localStorage.removeItem(PAY_KEY);
+      } catch {
+        /* nothing to forget */
+      }
       renderFileBox(await createWallet(), flight);
     };
     $("#wHave").onclick = () => ($("#wRestore").hidden = false);
@@ -491,7 +520,7 @@ function renderFileBox(w: ClaimWallet | undefined, flight?: string) {
   const droneOpts = Object.keys(data.drones).map((d) => `<option value="${esc(d)}">${esc(d)}</option>`).join("");
   box.innerHTML = `
     <div class="wallet">
-      <div class="grow"><span class="muted tiny">This browser's claim wallet: your payout goes here. Every visitor gets their own, made in their browser.</span><b class="mono" id="wAddr">${esc(w.address)}</b></div>
+      <div class="grow"><span class="muted tiny">Filing address: made in this browser to sign your claim with a quantum-safe key (ML-DSA-87). Send ${CLAIM_FUNDS_QOR} test QOR here.</span><b class="mono" id="wAddr">${esc(w.address)}</b></div>
       <button class="btn sm" id="wCopy">Copy</button>
       <span class="badge plain" id="wBal">Checking…</span>
     </div>
@@ -506,10 +535,15 @@ function renderFileBox(w: ClaimWallet | undefined, flight?: string) {
         <label><span>3. Did you see the drone's ID? <em class="muted">(optional)</em></span><select id="cDrone"><option value="">No / not sure</option>${droneOpts}</select>
           <small class="muted">Painted on the drone, or shown by a Remote ID app.</small></label>
       </div>
-      <fieldset class="match"><legend>4. Which flight? <span class="muted">(drones allowed there, in the air around that time)</span></legend><div id="cMatch"></div></fieldset>
+      <fieldset class="match"><legend>4. Which flight?</legend><p class="tiny muted" id="cHint"></p><div id="cMatch"></div></fieldset>
       <label><span>5. What happened?</span><textarea id="cNote" rows="3" maxlength="280" required placeholder="e.g. The parcel fell on my car near the drop point."></textarea></label>
       <label><span>Describe the place <em class="muted">(optional)</em></span><input id="cWhere" maxlength="140" placeholder="e.g. car park behind 12 Main St" />
         <small class="muted">Public in your claim, with the map point. The insurer can compare it with the drone's sealed position log.</small></label>
+      <fieldset class="match payto"><legend>6. Where should the payout go?</legend>
+        <label class="match-row"><input type="radio" name="cPay" value="own"${savedPayTo() ? " checked" : ""} /><span class="grow"><b>My own QoreChain address</b><input id="cPayTo" placeholder="qor1…" autocomplete="off" spellcheck="false" class="mono" value="${esc(savedPayTo())}" /></span></label>
+        <label class="match-row"><input type="radio" name="cPay" value="self"${savedPayTo() ? "" : " checked"} /><span class="grow"><b>The filing address above</b><span class="muted block mono">${esc(w.address)}</span></span></label>
+        <small class="muted">The 5 QOR payout and your 1 QOR deposit back both go here.</small>
+      </fieldset>
       <label><span>Photo proof <em class="muted">(optional)</em></span><input type="file" id="cPhoto" accept="image/*" />
         <small class="muted">The photo stays on your device. Only its fingerprint (SHA-256) goes on chain, so when you show it to the insurer they can prove it is the same photo you filed.</small>
         <small class="mono" id="cPhotoHash"></small></label>
@@ -517,8 +551,8 @@ function renderFileBox(w: ClaimWallet | undefined, flight?: string) {
     </form>
     <div id="fileOut" aria-live="polite"></div>
     <details class="wallet-more">
-      <summary>Recovery phrase and wallet options</summary>
-      <p class="muted tiny">Anyone with these words controls this wallet and its payouts. Write them down. This is a testnet wallet; don't keep real funds in it.</p>
+      <summary>Filing wallet options (you don't need these)</summary>
+      <p class="muted tiny">Only needed to use this filing address from another browser, or if you chose to keep the payout here. Anyone with these words controls it. Testnet only.</p>
       <p class="mono words" id="wWordsShow" hidden>${esc(w.mnemonic)}</p>
       <div class="file-actions"><button class="btn sm" id="wShow">Show words</button><button class="btn sm" id="wForget">Remove from this browser</button></div>
     </details>`;
@@ -590,6 +624,13 @@ function renderFileBox(w: ClaimWallet | undefined, flight?: string) {
       Number.isNaN(t) ? "" : c.off === 0 ? badge("ok", "In the air at that time") : badge("plain", `${ago(c.off)} ${c.start! > t ? "after" : "before"} that`);
     const row = (c: (typeof cands)[number]) => `<label class="match-row"><input type="radio" name="cPick" value="${esc(c.f.id)}"${c.f.id === picked ? " checked" : ""} />
           <span class="grow"><b>${esc(c.f.name)}</b><span class="muted block">Drone ${esc(c.f.segs[0]?.header.drone ?? "?")} · allowed over ${esc(FLEET[c.f.segs[0]?.header.drone]?.area ?? "its permit area")} · took off ${c.start ? esc(new Date(c.start).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })) : "—"} · about ${Math.max(1, Math.round((c.end! - c.start!) / 60000))} min in the air</span></span>${near(c)}</label>`;
+    $("#cHint").textContent = pin && !Number.isNaN(t)
+      ? "Flights of the drones allowed at your spot, closest to that time first."
+      : pin
+        ? "Flights of the drones allowed at your spot. Add the time to narrow it down."
+        : !Number.isNaN(t)
+          ? "Flights in the air around that time, anywhere. Click the map to narrow it down."
+          : "Click the map or give the time (either is enough) to find the drone.";
     $("#cMatch").innerHTML =
       (cands.length
         ? cands.map(row).join("")
@@ -677,6 +718,12 @@ function renderFileBox(w: ClaimWallet | undefined, flight?: string) {
     const drone = pickedFlight?.segs[0]?.header.drone ?? (flightId.includes("@") ? flightId.split("@")[0] : $<HTMLSelectElement>("#cDrone").value);
     const note = $<HTMLTextAreaElement>("#cNote").value.trim();
     const when = $<HTMLInputElement>("#cWhen").value;
+    const ownPay = $<HTMLInputElement>('input[name="cPay"][value="own"]').checked;
+    const payTo = ownPay ? $<HTMLInputElement>("#cPayTo").value.trim().toLowerCase() : "";
+    if (ownPay && !/^qor1[02-9ac-hj-np-z]{38,90}$/.test(payTo)) {
+      $("#fileOut").innerHTML = `<p class="alert">That payout address doesn't look like a QoreChain address (qor1…).</p>`;
+      return;
+    }
     const desc = $<HTMLInputElement>("#cWhere").value.trim();
     const where = [pin ? `${pin.lat},${pin.lon}` : "", desc].filter(Boolean).join(" · ");
     const out = $("#fileOut");
@@ -692,7 +739,7 @@ function renderFileBox(w: ClaimWallet | undefined, flight?: string) {
     const send = $<HTMLButtonElement>("#cSend");
     send.disabled = true;
     try {
-      const claim = { flight: flightId, note, ...(when ? { when } : {}), ...(where ? { where } : {}), ...(evidence ? { evidence } : {}), ...(drone && drone !== "unknown-drone" ? { drone } : {}) };
+      const claim = { flight: flightId, note, ...(when ? { when } : {}), ...(where ? { where } : {}), ...(evidence ? { evidence } : {}), ...(drone && drone !== "unknown-drone" ? { drone } : {}), ...(payTo && payTo !== w.address ? { payTo } : {}) };
       const r = await fileClaim(client, w, { rollupId: data.rollup.rollupId, poolAccount: data.claimsPool.account, depositUqor: BigInt(data.claimsPool.depositUqor), claim }, (step) => {
         out.innerHTML = `<p class="found"><i class="spin inline"></i>${esc(step)}</p>`;
       });
@@ -702,7 +749,7 @@ function renderFileBox(w: ClaimWallet | undefined, flight?: string) {
         <span class="mono block">${esc(r.txhash)}</span></div></div>
         <p class="muted tiny next">Next: the watchtower opens the sealed record and checks the six rules. Rule broken: 5 QOR plus your deposit go to your claim wallet. No rule broken: an insurer reviews your claim${evidence ? " (keep your photo to show them)" : ""}. Check back with your address below.</p>`;
       $<HTMLTextAreaElement>("#cNote").value = "";
-      $<HTMLInputElement>("#addr").value = w.address;
+      $<HTMLInputElement>("#addr").value = payTo || w.address;
       refresh();
     } catch (err) {
       out.innerHTML = `<p class="alert">${esc(err instanceof Error ? err.message : String(err))}</p>`;
