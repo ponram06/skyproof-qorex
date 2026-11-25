@@ -86,3 +86,21 @@ Cost of the two flights with their 36 posts: about 4.2 test QOR in fees.
 | Our watchtower rewound to the state before batch 4; the operator settled an honest **batch 4** in its place, roots match | `B6AE82B277B6037DFE84791CDE7C416455F1F1E9F87CEBF69DDE739C02D4A369` |
 
 What this shows: a batch that lies about withdrawals cannot steal from the pool on QoreChain. Another watcher on the network won the race to challenge it, so the watchtower's loop now polls every 6 s instead of 30 s.
+
+## Real claims filed from the website (deposit, insurer review, payouts)
+
+Both claims were filed from the website's Claims page by a quantum-safe browser wallet, `qor1teh0d0m9p47mjfzvzjsmxnnssfve4n6eq052f8`.
+
+| Step | Tx |
+|---|---|
+| The wallet registers its ML-DSA-87 key, with proof of possession. This is needed once before any other transaction from a new account; the website now does it automatically. | `462D04DDEA8190FDA282ABD8EE2A7113D9CCA03121BA3775077105503B21F180` (height 10,687,193) |
+| **Claim A** on the cheating flight: 1 QOR deposit and a claim with a photo fingerprint, in one transaction | `3C7988C0DA51607F56A7E37BF770354AC3B49A3BBC232DB883F1BD1F0D5CFDC0` (height 10,687,232) |
+| **Claim B** on the people_below flight, where no rule was broken: deposit and claim | `52D911B3178F534724B1D046B60C46C26802A65DD3717D45844757E0A082FEAE` (height 10,687,252) |
+| **Batch 5** (the two deposits and two claims). Watchtower: claim A found **B4_OVERRIDE** and paid; claim B found no breach and sent to the insurer | `442C8CD01C48ECED67892751FBC1D2BC3C98E54276A7B2FA17A9C4CE1A06C142` |
+| **Insurer decision** from the Insurers page. The photo matched its on-chain fingerprint, and the sealed record opened (98 records, all rules followed). Approved, with the reason stored on chain | `D36A8B260010F82D29713745A3232D7C3E22309D8F3A9EA0D8507AAC8CA55295` (height 10,687,339) |
+| **Batch 6** (claim A's 6 QOR payout as qledger withdrawal 2, plus the insurer decision) | `C3CF1BF149EF127C9EF483C2E9B669B2CD05CCBA8BD64E13C2B457CBDDDBBF00` |
+| **Batch 7** (claim B's insurer-approved 6 QOR payout as withdrawal 3) | `38C24A0983B1D003B9BDB0895799752A0D21F47752EEA50A35CF62C59C853A3F` |
+| **`MsgExecuteWithdrawal`**: 6 QOR (5 QOR payout and the 1 QOR deposit back) to claimant A, batch 6, withdrawal 2 | `B61423716B29A4F88A65F470F72BBE96FC69E35540280F7BB2E62DC4C98C76C8` (height 10,712,245) |
+| **`MsgExecuteWithdrawal`**: 6 QOR to claimant B, approved by the insurer, batch 7, withdrawal 3 | `29DA803EF3C78E0CC37E452AC891321C83451BCD553A229A97E5D20DA1D33A4B` (height 10,712,249) |
+
+Batches 5–7 were finalized after the 3,600 s challenge window with no challenge, and all roots matched the watchtower's re-execution. An earlier attempt to file a claim before the key was registered was refused at CheckTx (code 8) and cost no fee.
