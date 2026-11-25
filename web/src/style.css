@@ -367,3 +367,5 @@ tr.hit td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
 .match-row input { flex: none; }
 
 .nowrap { white-space: nowrap; }
+
+.hero .stats { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); max-width: 1000px; }

@@ -167,6 +167,7 @@ function home() {
     [String(flights.length), "real flights on chain"],
     [`${qor(paidTotal(data))} QOR`, "paid to victims"],
     [String(data.fraud?.length ?? 0), "cheater caught"],
+    ...(data.audit ? [[`${data.audit.rows.filter((r) => r.justified).length}/${data.audit.rows.length}`, "payouts passed the independent audit"] as [string, string]] : []),
     [String(data.batches.length), "batches settled"],
   ];
   return `
@@ -968,7 +969,10 @@ function tourPage() {
          ${c?.decision ? `<div class="result ${c.decision.approve ? "ok" : "bad"}"><span class="icon">${c.decision.approve ? "✓" : "✕"}</span><div><b>Insurer ${c.decision.approve ? "approved" : "rejected"} the claim</b><span>“${esc(c.decision.reason)}” · signed with the insurer's quantum-safe key, on chain</span></div></div>` : ""}
          <div class="rules">${ruleList(broken)}</div>`)}
       ${step(6, "The victim is paid automatically", pay ? `The judge signs a payout from the claims pool${BigInt(c?.deposit ?? "0") > 0n ? ", with the claimant's 1 QOR deposit back" : ""}. QoreChain settles it after the challenge window.` : c ? "No rule was broken, so nothing was paid. A claim filed today would go to the insurer for a human review." : "No claim, no payout.",
-        pay ? `<div class="kv"><div><span>Paid</span><b>${qor(pay.amount)} QOR to ${esc(short(c!.victim))}</b></div><div><span>In batch</span><b>${pay.batch}</b></div></div>
+        pay ? `<div class="kv"><div><span>Paid</span><b>${qor(pay.amount)} QOR to ${esc(short(c!.victim))}</b></div><div><span>In batch</span><b>${pay.batch}</b></div>${(() => {
+              const a = data.audit?.rows.find((r) => r.batch === pay.batch && r.recipient === c!.victim && r.amount === pay.amount);
+              return a ? `<div><span>Independent audit</span><b>${a.justified ? "✓ Owed: matched to this claim" : "✕ Not justified"}</b></div>` : "";
+            })()}</div>
               ${pay.tx ? `<div class="tour-act"><button class="btn primary" id="tPay" data-tx="${esc(pay.tx)}">Check the payment on QoreChain</button><span class="tiny mono muted">${esc(short(pay.tx, 10))}</span></div><div class="tour-out" id="tPayOut"></div>` : ""}` : "")}
       ${step(7, "A cheater can't steal the claims pool", "A rogue submitter bonded into the rollup and posted a batch whose payout list sent the whole claims pool to itself. The batch was re-run, the fraud was proven on chain, and QoreChain slashed the cheater's bond. Victims' money never moved.",
         fraud ? `<div class="kv"><div><span>Fake batch</span><b>#${esc(fraud.batch)}</b></div><div><span>Cheater lost</span><b>${qor(fraud.slashed)} QOR bond (half burned, half to the challenger)</b></div></div>
