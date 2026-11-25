@@ -124,9 +124,9 @@ code { font-family: var(--mono); font-size: 0.88em; background: #efeee9; padding
 .step, .who-card { padding: 24px; }
 .step .n { display: inline-grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; background: var(--accent); color: var(--accent-ink); font-weight: 800; }
 .step h3, .who-card h3 { font-size: 20px; margin: 16px 0 6px; }
-.inv-who h3 { margin-top: 0; }
+.who-card h3 { margin-top: 0; }
 .step p, .who-card p { color: var(--ink-2); }
-.inv-who { text-decoration: none; display: flex; flex-direction: column; transition: border-color 0.15s, transform 0.15s; }
+.who-card { text-decoration: none; display: flex; flex-direction: column; transition: border-color 0.15s, transform 0.15s; }
 .who-card:hover { border-color: var(--ink); transform: translateY(-2px); }
 .more { margin-top: auto; padding-top: 16px; font-weight: 600; font-size: 15px; }
 

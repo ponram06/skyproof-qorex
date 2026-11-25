@@ -28,7 +28,7 @@ interface Data {
 }
 
 interface Segment { header: SegmentHeader; signature: Uint8Array; batch: number; seq: number; sigOk: boolean; chainOk: boolean; sealed: boolean }
-interface Flight { id: string; name: string; segs: Segment[]; intact: boolean; records: number; claim?: Data["claims"][number] }
+interface Flight { id: string; name: string; segs: Segment[]; intact: boolean; records: number; claim?: Data["claims"][number]; claims: Data["claims"] }
 
 /* ================= words ================= */
 
@@ -71,6 +71,12 @@ const badge = (tone: "ok" | "bad" | "warn" | "plain", text: string) => `<span cl
 const brokenRules = (v?: Verdict) => [...new Set(v?.findings.map((f) => f.rule) ?? [])];
 const ruleList = (broken: string[]) => RULES.map(([k, t]) => `<span class="${broken.includes(k) ? "x" : ""}">${broken.includes(k) ? "✕" : "✓"} ${esc(t)}</span>`).join("");
 
+/** When a flight started: the drone's flight id ends in its take-off time (ms). */
+const flightTime = (id: string) => {
+  const ms = Number(id.split("-").pop());
+  return Number.isFinite(ms) && ms > 1e12 ? new Date(ms) : undefined;
+};
+
 let data: Data;
 let flights: Flight[] = [];
 let arenas: ArenaHandle[] = [];
@@ -97,6 +103,7 @@ function buildFlights(d: Data): Flight[] {
       prev = s.header.head;
     }
     const key = Object.keys(FLIGHT_NAME).find((k) => id.includes(`-${k}-`));
+    const all = d.claims.filter((c) => c.flight === id);
     return {
       id,
       name: key ? FLIGHT_NAME[key] : id,
@@ -104,7 +111,8 @@ function buildFlights(d: Data): Flight[] {
       intact: segs.every((s) => s.sigOk && s.chainOk && s.sealed),
       records: segs.reduce((n, s) => n + s.header.n, 0),
       // the newest claim on this flight (a flight can be claimed by several people)
-      claim: d.claims.filter((c) => c.flight === id).pop(),
+      claim: all[all.length - 1],
+      claims: all,
     };
   });
 }
@@ -112,9 +120,13 @@ function buildFlights(d: Data): Flight[] {
 const paidTotal = (d: Data) =>
   d.batches.flatMap((b) => b.withdrawals).filter((w) => w.index !== undefined && d.withdrawalsExecuted?.[w.index]).reduce((s, w) => s + Number(w.amount), 0);
 
+const payoutUqor = () => BigInt(data.claimsPool?.payoutUqor ?? "5000000");
+/** What a paid claim received: the payout plus its deposit back. */
+const claimPaid = (c: Data["claims"][number]) => payoutUqor() + BigInt(c.deposit ?? "0");
+
 function outcome(c?: Flight["claim"]) {
   if (!c) return { tone: "plain" as const, label: "No claim" };
-  if (c.status === "paid") return c.decision ? { tone: "bad" as const, label: "Insurer approved · paid" } : { tone: "bad" as const, label: "Rule broken · 5 QOR paid" };
+  if (c.status === "paid") return c.decision ? { tone: "bad" as const, label: `Insurer approved · ${qor(claimPaid(c).toString())} QOR paid` } : { tone: "bad" as const, label: `Rule broken · ${qor(claimPaid(c).toString())} QOR paid` };
   if (c.status === "rejected") return { tone: "ok" as const, label: c.decision ? "Insurer rejected the claim" : "Safe · claim rejected" };
   if (c.status === "review") return { tone: "warn" as const, label: "With the insurer" };
   return { tone: "warn" as const, label: "Claim open" };
@@ -123,7 +135,7 @@ function outcome(c?: Flight["claim"]) {
 /** How a claim's status reads in the claims table. */
 function claimBadge(c: Data["claims"][number]) {
   const back = BigInt(c.deposit ?? "0") > 0n ? " + deposit back" : "";
-  if (c.status === "paid") return badge("bad", c.decision ? `Insurer approved · paid 5 QOR${back}` : `Paid 5 QOR${back}`);
+  if (c.status === "paid") return badge("bad", c.decision ? `Insurer approved · paid ${qor(payoutUqor().toString())} QOR${back}` : `Paid ${qor(payoutUqor().toString())} QOR${back}`);
   if (c.status === "rejected") return badge("ok", c.decision ? "Rejected by insurer · deposit kept" : "Rejected");
   if (c.status === "review") return badge("warn", "With the insurer");
   return badge("warn", "Open");
@@ -235,9 +247,11 @@ function flightsPage() {
           </summary>
           <div class="body">
             <div class="kv">
-              <div><span>Claim</span><b>“${esc(f.claim?.note ?? "None")}”</b></div>
-              <div><span>Decision</span><b>${broken.length ? `Broke: ${broken.map((r) => esc(RULE[r] ?? r)).join(", ")}` : f.claim ? "No rule broken" : "—"}</b></div>
+              <div><span>Drone</span><b>${esc(f.segs[0]?.header.drone ?? "?")}</b></div>
+              <div><span>Took off</span><b>${flightTime(f.id) ? esc(flightTime(f.id)!.toLocaleString()) : "—"}</b></div>
+              <div><span>Rules check</span><b>${broken.length ? `Broke: ${broken.map((r) => esc(RULE[r] ?? r)).join(", ")}` : f.claim ? "No rule broken" : "Checked when someone claims"}</b></div>
             </div>
+            ${f.claims.length ? `<div class="scroll"><table class="table"><thead><tr><th>Claims on this flight (${f.claims.length})</th><th>Decision</th></tr></thead><tbody>${f.claims.map((c) => `<tr><td>“${esc(c.note)}”<span class="muted block mono">${esc(short(c.victim))}</span></td><td>${claimBadge(c)}</td></tr>`).join("")}</tbody></table></div>` : ""}
             <div><a class="btn sm" href="#/claims/${encodeURIComponent(f.id)}">Hurt by this flight? File a claim</a></div>
             <div class="tamper">
               <button class="btn" data-tamper="${esc(f.id)}">Try to edit this record</button>
@@ -496,7 +510,8 @@ function renderFileBox(w: ClaimWallet | undefined, flight?: string) {
 
 function proofPage() {
   const r = data.rollup;
-  const paid = Object.entries(data.withdrawalsExecuted ?? {});
+  const allW = data.batches.flatMap((b) => b.withdrawals.map((w) => ({ ...w, batch: b.index })));
+  const paid = Object.entries(data.withdrawalsExecuted ?? {}).map(([i, tx]) => ({ i, tx, w: allW.find((w) => w.index === i) }));
   return `
   <section class="wrap page">
     <div class="head"><h1>Proof</h1><p>For judges and developers. Everything here can be checked live against QoreChain.</p></div>
@@ -524,13 +539,13 @@ function proofPage() {
     </table></div></div>
 
     <h2 class="sub-h">Payouts executed on QoreChain</h2>
-    <div class="card flush"><div class="scroll"><table class="table"><thead><tr><th>Withdrawal</th><th>Transaction</th></tr></thead>
-      <tbody>${paid.map(([i, tx]) => `<tr><td>#${esc(i)}</td><td class="mono">${esc(tx)}</td></tr>`).join("") || `<tr><td colspan="2" class="muted">None yet</td></tr>`}</tbody></table></div></div>
+    <div class="card flush"><div class="scroll"><table class="table"><thead><tr><th>Withdrawal</th><th>Paid</th><th>To</th><th>From batch</th><th>Transaction</th></tr></thead>
+      <tbody>${paid.map(({ i, tx, w }) => `<tr><td>#${esc(i)}</td><td><b>${w ? `${qor(w.amount)} QOR` : "—"}</b></td><td class="mono">${w ? esc(short(w.recipient)) : "—"}</td><td>${w ? `#${w.batch}` : "—"}</td><td class="mono" title="${esc(tx)}">${esc(short(tx, 10))}</td></tr>`).join("") || `<tr><td colspan="5" class="muted">None yet</td></tr>`}</tbody></table></div></div>
 
     <h2 class="sub-h">Fraud caught</h2>
     <div class="card flush"><div class="scroll"><table class="table"><thead><tr><th>Batch</th><th>Penalty</th><th>Transaction</th></tr></thead>
       <tbody>${(data.fraud ?? []).map((f) => `<tr><td>#${esc(f.batch)}</td><td>${qor(f.slashed)} QOR slashed, ${qor(f.burned)} burned</td><td class="mono">${esc(short(f.tx, 12))}</td></tr>`).join("") || `<tr><td colspan="3" class="muted">None</td></tr>`}</tbody></table></div></div>
-    <p class="muted note">A dishonest submitter posted a batch paying itself. QoreChain re-executed it, upheld the fraud proof and slashed its bond. The honest batch replaced it.</p>
+    <p class="muted note">A rogue second submitter posted a batch paying the whole claims pool to itself. QoreChain re-executed it, upheld the fraud proof and slashed the rogue's bond. The operator then settled an honest batch in its place.</p>
 
     <details class="card raw"><summary>All ${data.posts.length} rollup posts</summary><div class="scroll"><table class="table">
       <thead><tr><th>#</th><th>Batch</th><th>Kind</th><th>Detail</th></tr></thead>
@@ -563,13 +578,19 @@ function proofReady() {
 function investigatePage() {
   return `
   <section class="wrap page">
-    <div class="head"><h1>Investigate</h1><p>Open a sealed flight record with the investigator's key. The key never leaves your browser.</p></div>
+    <div class="head"><h1>Investigate</h1><p>Every flight's full record is on QoreChain, but sealed: locked with ML-KEM-1024 so the public can't read where people live or where the drone went. Only a key holder can open it. Try it below.</p></div>
+    <div class="inv-who-grid">
+      <div class="card inv-who"><b>Investigator</b><span>An aviation authority, police or accident investigator. Holds only a <b>read key</b>: can open any flight's sealed record and see if a rule was broken. <b>Cannot</b> decide claims or move money.</span></div>
+      <div class="card inv-who"><b>Insurer</b><span>Holds a read key <b>and</b> a signing key. Opens a record only to decide a claim the rules didn't flag, then signs approve or reject on chain, and that decision moves money. See the <a class="link" href="#/insurer">Insurers</a> page.</span></div>
+    </div>
     <div class="card form">
-      <label><span>1. Key file</span><input type="file" id="invKey" accept=".json" /></label>
+      <label><span>1. Demo code</span><input id="invCode" placeholder="type skyproof-demo" autocomplete="off" spellcheck="false" /></label>
+      <span class="muted tiny or">or</span>
+      <label><span>Key file</span><input type="file" id="invKey" accept=".json" /></label>
       <label><span>2. Flight</span><select id="invFlight">${flights.map((f) => `<option value="${esc(f.id)}">${esc(f.name)}</option>`).join("")}</select></label>
       <button class="btn primary" id="invOpen" disabled>3. Open record</button>
     </div>
-    <p class="muted tiny">No key? Create the demo key with <code>npm run investigator-key</code> in <code>rollup/</code>. Without it, the record is unreadable.</p>
+    <p class="muted tiny" id="invKeyNote">For judges: type <code>skyproof-demo</code> to load the demo investigator key (testnet only). Try a wrong code first: the record stays sealed.</p>
     <div id="invOut"></div>
   </section>`;
 }
@@ -578,6 +599,32 @@ function investigateReady() {
   let key: { address: string; seed: string } | undefined;
   const btn = $<HTMLButtonElement>("#invOpen");
   const out = $("#invOut");
+  const code = $<HTMLInputElement>("#invCode");
+  code.addEventListener("input", async () => {
+    const v = code.value.trim().toLowerCase();
+    if (v.length < "skyproof-demo".length) {
+      key = undefined;
+      btn.disabled = true;
+      $("#invKeyNote").innerHTML = `For judges: type <code>skyproof-demo</code> to load the demo investigator key (testnet only). Try a wrong code first: the record stays sealed.`;
+      return;
+    }
+    if (v !== "skyproof-demo") {
+      key = undefined;
+      btn.disabled = true;
+      $("#invKeyNote").innerHTML = `<span class="alert inline">Wrong code. Without the key, the sealed record can't be read by anyone, not even this website.</span>`;
+      return;
+    }
+    try {
+      const res = await fetch("demo-investigator.json");
+      if (!res.ok) throw new Error("not published");
+      const k = await res.json();
+      key = { address: k.address, seed: k.mlkem1024Seed };
+      btn.disabled = !key.address || !key.seed;
+      $("#invKeyNote").innerHTML = `✓ Demo investigator key loaded (<span class="mono">${esc(short(k.address))}</span>). Pick a flight and open it.`;
+    } catch {
+      $("#invKeyNote").innerHTML = `<span class="alert inline">The demo key isn't published on this site. Load a key file instead.</span>`;
+    }
+  });
   $<HTMLInputElement>("#invKey").addEventListener("change", async (e) => {
     const file = (e.target as HTMLInputElement).files?.[0];
     if (!file) return;
@@ -794,8 +841,8 @@ function tourPage() {
       ${step(6, "The victim is paid automatically", pay ? `The judge signs a payout from the claims pool${BigInt(c?.deposit ?? "0") > 0n ? ", with the claimant's 1 QOR deposit back" : ""}. QoreChain settles it after the challenge window.` : c ? "No rule was broken, so nothing was paid. A claim filed today would go to the insurer for a human review." : "No claim, no payout.",
         pay ? `<div class="kv"><div><span>Paid</span><b>${qor(pay.amount)} QOR to ${esc(short(c!.victim))}</b></div><div><span>In batch</span><b>${pay.batch}</b></div></div>
               ${pay.tx ? `<div class="tour-act"><button class="btn primary" id="tPay" data-tx="${esc(pay.tx)}">Check the payment on QoreChain</button><span class="tiny mono muted">${esc(short(pay.tx, 10))}</span></div><div class="tour-out" id="tPayOut"></div>` : ""}` : "")}
-      ${step(7, "A cheating operator loses their bond", "The operator once posted a batch with a fake payout list. The watchtower re-ran it, proved the fraud on chain, and QoreChain slashed the operator.",
-        fraud ? `<div class="kv"><div><span>Fake batch</span><b>#${esc(fraud.batch)}</b></div><div><span>Operator lost</span><b>${qor(fraud.slashed)} QOR (half burned)</b></div></div>
+      ${step(7, "A cheater can't steal the claims pool", "A rogue submitter bonded into the rollup and posted a batch whose payout list sent the whole claims pool to itself. The batch was re-run, the fraud was proven on chain, and QoreChain slashed the cheater's bond. Victims' money never moved.",
+        fraud ? `<div class="kv"><div><span>Fake batch</span><b>#${esc(fraud.batch)}</b></div><div><span>Cheater lost</span><b>${qor(fraud.slashed)} QOR bond (half burned, half to the challenger)</b></div></div>
           <div class="tour-act"><button class="btn primary" id="tFraud" data-tx="${esc(fraud.tx)}">Check the fraud proof on QoreChain</button><span class="tiny mono muted">${esc(short(fraud.tx, 10))}</span></div><div class="tour-out" id="tFraudOut"></div>` : "")}
     </ol>
     <div class="card tour-next">
@@ -877,12 +924,7 @@ function tourReady() {
 
 /* ---------- operator console ---------- */
 
-/** When a flight started: the drone's flight id ends in its take-off time (ms). */
-const flightTime = (id: string) => {
-  const ms = Number(id.split("-").pop());
-  return Number.isFinite(ms) && ms > 1e12 ? new Date(ms) : undefined;
-};
-const claimCost = (c: Data["claims"][number]) => BigInt(data.claimsPool?.payoutUqor ?? "5000000") + BigInt(c.deposit ?? "0");
+const claimCost = claimPaid;
 
 function operatorPage() {
   const op = data.rollup.creator;
@@ -929,7 +971,7 @@ function operatorPage() {
     <div class="card op-id">
       <div class="grow"><span class="muted tiny">Operator (rollup creator)</span><b class="mono">${esc(op)}</b></div>
       ${badge(data.rollup.status === "active" ? "ok" : "warn", `Rollup ${data.rollup.rollupId} · ${data.rollup.status}`)}
-      ${slashed ? badge("bad", `Slashed ${qor(slashed)} QOR for a fake batch`) : ""}
+      ${slashed ? badge("ok", `A rogue submitter was slashed ${qor(slashed)} QOR; your pool was never touched`) : ""}
     </div>
     <div class="stats op-stats">${stats.map(([id, v, k]) => `<div><b${id ? ` id="${id}"` : ""}>${esc(v)}</b><span>${esc(k)}</span></div>`).join("")}</div>
 
