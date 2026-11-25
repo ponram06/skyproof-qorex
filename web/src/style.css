@@ -472,3 +472,7 @@ tr.hit td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
 .strip-i { display: block; height: 34px; line-height: 34px; }
 .picker { align-items: stretch; }
 .picker button { display: flex; flex-direction: column; justify-content: flex-start; }
+
+/* the caption under the scene already explains each step: no side list */
+.arena { grid-template-columns: minmax(0, 1fr) !important; }
+.arena .arena-side { display: none !important; }
