@@ -2,7 +2,8 @@
  * Fly a demo delivery and post it to the rollup: the drone registration (once),
  * then each segment's sealed body and signed header.
  *
- * Usage: fly <scenario> [--withhold]
+ * Usage: fly <scenario> [--drone SKY-002] [--withhold]
+ *   --drone: which drone of the fleet (flight/fleet.ts) flies; default SKY-001
  *   scenarios: normal, people_below, link_lost, cheating, unapproved, shortcut, altitude, wind
  *   --withhold: the operator "loses" one segment body (a B5 breach)
  */
@@ -11,13 +12,12 @@ import { rdk, ROLLUP_ID } from "../config.js";
 import { droneKey, kemKey, account } from "../keys.js";
 import { GENESIS } from "../flight/record.js";
 import { droneRegPost } from "../flight/posts.js";
-import { DEMO_PERMIT } from "../flight/scenarios.js";
+import { FLEET } from "../flight/fleet.js";
 import { simulate, SIM_SCENARIOS, type SimScenario } from "../sim/sim.js";
 import { sealSegment } from "../flight/segment.js";
 import { load, save } from "../state.js";
 import { canonical, enc, hex, sha256 } from "../util.js";
 
-const DRONE = "SKY-001";
 const PER_SEGMENT = 12;
 
 export interface FlightLog {
@@ -31,13 +31,19 @@ async function main() {
   const scenario = process.argv[2] as SimScenario;
   if (!SIM_SCENARIOS.includes(scenario)) throw new Error(`scenario must be one of: ${SIM_SCENARIOS.join(", ")}`);
   const withhold = process.argv.includes("--withhold");
+  const di = process.argv.indexOf("--drone");
+  const DRONE = di > 0 ? process.argv[di + 1] : "SKY-001";
+  const unit = FLEET[DRONE];
+  if (!unit) throw new Error(`drone must be one of: ${Object.keys(FLEET).join(", ")}`);
 
   const op = await connect("operator");
   const key = droneKey(DRONE);
-  const st = load("operator", { droneRegistered: false, flights: [] as FlightLog[] });
+  const st = load("operator", { droneRegistered: false, registered: [] as string[], flights: [] as FlightLog[] });
+  st.registered ??= st.droneRegistered ? ["SKY-001"] : [];
 
-  if (!st.droneRegistered) {
-    txLine(`drone ${DRONE} registered`, await op.rdkTx.postRollupData({ rollupId: ROLLUP_ID, data: droneRegPost({ drone: DRONE, permit: DEMO_PERMIT }, key.publicKey) }, { fee: "auto" }));
+  if (!st.registered.includes(DRONE)) {
+    txLine(`drone ${DRONE} registered (${unit.area})`, await op.rdkTx.postRollupData({ rollupId: ROLLUP_ID, data: droneRegPost({ drone: DRONE, permit: unit.permit }, key.publicKey) }, { fee: "auto" }));
+    st.registered.push(DRONE);
     st.droneRegistered = true;
     save("operator", st);
   }
@@ -47,8 +53,8 @@ async function main() {
   );
 
   const flight = `${DRONE}-${scenario}-${Date.now()}`;
-  const permitHash = hex(sha256(enc.encode(canonical(DEMO_PERMIT))));
-  const recs = simulate({ scenario, flight, drone: DRONE, permit: DEMO_PERMIT, permitHash, seed: Date.now() % 100_000 });
+  const permitHash = hex(sha256(enc.encode(canonical(unit.permit))));
+  const recs = simulate({ scenario, flight, drone: DRONE, permit: unit.permit, permitHash, seed: Date.now() % 100_000, world: unit.world });
   console.log(`flight ${flight}: ${recs.length} records`);
 
   const log: FlightLog = { flight, scenario, withheld: [], segments: [] };
