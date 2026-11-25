@@ -12,7 +12,7 @@ QoreChain *Build Before Q-Day* · category **Protocol Builders** · rollup [`sky
 
 1. **Watch it (30 s).** Home → *Try it* → **Operator ignores "No"**: the drone drops on a person after its safety check said No. Then **Too windy**: a gust blows the parcel onto a car.
 2. **Follow one real flight (60 s).** **Guided demo**: one flight from take-off to payout. Every *Check* button asks QoreChain live from your browser.
-3. **Open a sealed record (30 s).** *Check the proof* → **Investigate**, demo code **`skyproof-demo`**. A wrong code leaves it sealed (ML-KEM-1024).
+3. **Open a sealed record (30 s).** *Check the proof* → **Open a sealed record**, demo code **`skyproof-demo`**. A wrong code leaves it sealed (ML-KEM-1024).
 4. **Be the insurer (30 s).** **Insurers**, demo code **`skyproof-demo`**: check a real and a fake photo against the fingerprint on chain, open the record, approve or reject. In demo mode the decision is shown, not posted.
 5. **Check the chain (30 s).** [EVIDENCE.md](docs/EVIDENCE.md): every step from rollup creation to payout and the upheld fraud proof, one click each. [ATTACKS.md](docs/ATTACKS.md): 19 attacks refused, each with a test or a transaction.
 
