@@ -1,5 +1,5 @@
 {
- "generatedAt": "2026-11-24T10:17:54.684Z",
+ "generatedAt": "2026-11-25T06:20:44.029Z",
  "chainId": "qorechain-diana",
  "rollup": {
   "rollupId": "skyproof-1",
@@ -23,7 +23,7 @@
   "privacy": "",
   "members": [],
   "membersEpoch": 0,
-  "depositPool": "40000000"
+  "depositPool": "30000000"
  },
  "drones": {
   "SKY-001": {
@@ -130,6 +130,57 @@
    "finalizedAt": 10606643,
    "tx": "B6AE82B277B6037DFE84791CDE7C416455F1F1E9F87CEBF69DDE739C02D4A369",
    "withdrawals": []
+  },
+  {
+   "index": 5,
+   "status": "finalized",
+   "inboxStart": 55,
+   "inboxEnd": 59,
+   "txCount": 4,
+   "stateRoot": "717bee95a299189e1765009f5cda3a203cfc54cf09c79a05a52a796792589584",
+   "withdrawalsRoot": "",
+   "submittedTime": 1795551979,
+   "finalizedAt": 10689804,
+   "tx": "442C8CD01C48ECED67892751FBC1D2BC3C98E54276A7B2FA17A9C4CE1A06C142",
+   "withdrawals": []
+  },
+  {
+   "index": 6,
+   "status": "finalized",
+   "inboxStart": 59,
+   "inboxEnd": 61,
+   "txCount": 2,
+   "stateRoot": "28763ad839908f0858e28ee32c6fd6f7c0811cf26f5cab7e9841443ba2620e2d",
+   "withdrawalsRoot": "0994bb1ca3beb48e12deb96a6a51b4551a2612f382d686ad9116becacf642646",
+   "submittedTime": 1795552090,
+   "finalizedAt": 10689882,
+   "tx": "C3CF1BF149EF127C9EF483C2E9B669B2CD05CCBA8BD64E13C2B457CBDDDBBF00",
+   "withdrawals": [
+    {
+     "index": "2",
+     "recipient": "qor1teh0d0m9p47mjfzvzjsmxnnssfve4n6eq052f8",
+     "amount": "6000000"
+    }
+   ]
+  },
+  {
+   "index": 7,
+   "status": "finalized",
+   "inboxStart": 61,
+   "inboxEnd": 62,
+   "txCount": 1,
+   "stateRoot": "46cbe3e7971561fb5a9cb02767d8cca2bb99ab7b4c8f86946d3521622152a615",
+   "withdrawalsRoot": "efc3bb0cb449fd8168c59d5d57234919a1324db82611f90366b8c38eca2a629d",
+   "submittedTime": 1795552135,
+   "finalizedAt": 10689914,
+   "tx": "38C24A0983B1D003B9BDB0895799752A0D21F47752EEA50A35CF62C59C853A3F",
+   "withdrawals": [
+    {
+     "index": "3",
+     "recipient": "qor1teh0d0m9p47mjfzvzjsmxnnssfve4n6eq052f8",
+     "amount": "6000000"
+    }
+   ]
   }
  ],
  "headers": [
@@ -737,6 +788,62 @@
    "poster": "qor1xynqax3jn65dekatcxqmfwpyh84xtgzl8y4mmn",
    "kind": "drone",
    "detail": "SKY-001"
+  },
+  {
+   "batch": 5,
+   "seq": 56,
+   "height": 10687232,
+   "poster": "deposit:qor1teh0d0m9p47mjfzvzjsmxnnssfve4n6eq052f8",
+   "kind": "deposit",
+   "detail": "1000000 uqor"
+  },
+  {
+   "batch": 5,
+   "seq": 57,
+   "height": 10687232,
+   "poster": "qor1teh0d0m9p47mjfzvzjsmxnnssfve4n6eq052f8",
+   "kind": "claim",
+   "detail": "SKY-001-cheating-1795418690032"
+  },
+  {
+   "batch": 5,
+   "seq": 58,
+   "height": 10687252,
+   "poster": "deposit:qor1teh0d0m9p47mjfzvzjsmxnnssfve4n6eq052f8",
+   "kind": "deposit",
+   "detail": "1000000 uqor"
+  },
+  {
+   "batch": 5,
+   "seq": 59,
+   "height": 10687252,
+   "poster": "qor1teh0d0m9p47mjfzvzjsmxnnssfve4n6eq052f8",
+   "kind": "claim",
+   "detail": "SKY-001-people_below-1795418572924"
+  },
+  {
+   "batch": 6,
+   "seq": 60,
+   "height": 10687297,
+   "poster": "qor1wys2wftp530gzhmzrrj3gpk4r7r4vkqpg8f3qf",
+   "kind": "withdrawal",
+   "detail": "6000000 uqor → qor1teh0d0m9p47mjfzvzjsmxnnssfve4n6eq052f8"
+  },
+  {
+   "batch": 6,
+   "seq": 61,
+   "height": 10687339,
+   "poster": "qor1hcpn88ydjgd94t9tm7rzxkuqnjaprqj57jngej",
+   "kind": "insurer decision",
+   "detail": "approved SKY-001-people_below-1795418572924"
+  },
+  {
+   "batch": 7,
+   "seq": 62,
+   "height": 10687372,
+   "poster": "qor1wys2wftp530gzhmzrrj3gpk4r7r4vkqpg8f3qf",
+   "kind": "withdrawal",
+   "detail": "6000000 uqor → qor1teh0d0m9p47mjfzvzjsmxnnssfve4n6eq052f8"
   }
  ],
  "claims": [
@@ -791,6 +898,46 @@
      }
     ]
    }
+  },
+  {
+   "flight": "SKY-001-cheating-1795418690032",
+   "victim": "qor1teh0d0m9p47mjfzvzjsmxnnssfve4n6eq052f8",
+   "note": "The drone dropped its parcel while I was standing under it. It hit my shoulder.",
+   "status": "paid",
+   "deposit": "1000000",
+   "height": 10687232,
+   "when": "2026-11-23T12:55",
+   "where": "Drop point, Riverside Park entrance",
+   "evidence": "edf1be3973619b683e3e50aa3ef1bf45a0a6cccca2ec6360f2f680897c5fbac0",
+   "verdict": {
+    "breach": true,
+    "findings": [
+     {
+      "rule": "B4_OVERRIDE",
+      "seq": 47,
+      "detail": "DROP after the safety model said DENY"
+     }
+    ]
+   }
+  },
+  {
+   "flight": "SKY-001-people_below-1795418572924",
+   "victim": "qor1teh0d0m9p47mjfzvzjsmxnnssfve4n6eq052f8",
+   "note": "The drone's downdraft knocked a flowerpot off my balcony while it hovered at the drop point.",
+   "status": "paid",
+   "deposit": "1000000",
+   "height": 10687252,
+   "when": "2026-11-23T12:53",
+   "where": "Flat 4B, next to the drop point",
+   "evidence": "edf1be3973619b683e3e50aa3ef1bf45a0a6cccca2ec6360f2f680897c5fbac0",
+   "verdict": {
+    "breach": false,
+    "findings": []
+   },
+   "decision": {
+    "approve": true,
+    "reason": "Photo matches the filing; the drone hovered low over the balcony at that time, so the downdraft damage is plausible."
+   }
   }
  ],
  "claimsPool": {
@@ -829,11 +976,28 @@
    "batch": 4,
    "valid": true,
    "note": "roots match"
+  },
+  {
+   "batch": 5,
+   "valid": true,
+   "note": "roots match"
+  },
+  {
+   "batch": 6,
+   "valid": true,
+   "note": "roots match"
+  },
+  {
+   "batch": 7,
+   "valid": true,
+   "note": "roots match"
   }
  ],
  "withdrawalsExecuted": {
   "0": "2C6A0DDBC423727AEA71D1315E99D01CB7CABD1D46674119CDC0F80856767FB2",
-  "1": "B3DDADBFFAE7E44F612C8AB6666ADAF8E4FA75B9DB5F19B0BB5CC1BF51BE7CF6"
+  "1": "B3DDADBFFAE7E44F612C8AB6666ADAF8E4FA75B9DB5F19B0BB5CC1BF51BE7CF6",
+  "2": "B61423716B29A4F88A65F470F72BBE96FC69E35540280F7BB2E62DC4C98C76C8",
+  "3": "29DA803EF3C78E0CC37E452AC891321C83451BCD553A229A97E5D20DA1D33A4B"
  },
  "fraud": [
   {
