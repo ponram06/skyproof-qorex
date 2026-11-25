@@ -629,7 +629,8 @@ export function mountArena(root: HTMLElement, recs: Rec[], permit: Permit, verdi
     requestAnimationFrame(() => {
       const side = root.querySelector<HTMLElement>(".arena-side");
       const main = root.querySelector<HTMLElement>(".arena-main");
-      if (side && main) side.style.height = matchMedia("(max-width: 980px)").matches ? "" : `${main.offsetHeight}px`;
+      // Beside the view (same top): match its height. Below it: let it size itself.
+      if (side && main) side.style.height = side.offsetTop === main.offsetTop ? `${main.offsetHeight}px` : "";
     });
     camera.aspect = w / h;
     camera.updateProjectionMatrix();

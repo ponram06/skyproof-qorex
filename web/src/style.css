@@ -318,7 +318,7 @@ tr.hit td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
 .tour-body { display: grid; gap: 12px; min-width: 0; }
 .tour-body h3 { font-size: 19px; }
 .tour-body > p.muted { margin-top: -6px; }
-.tour-view { height: 360px; }
+.tour-view { height: auto; }
 .tour-act { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
 .tour-out { display: grid; gap: 10px; }
 .tour-out:empty { display: none; }
@@ -326,7 +326,7 @@ tr.hit td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
 .who-mini { display: flex; flex-wrap: wrap; gap: 8px; }
 @media (max-width: 760px) {
   .tour-step { grid-template-columns: 1fr; padding: 16px; }
-  .tour-view { height: 280px; }
+  .tour-view { height: auto; }
 }
 
 /* arena: legend and step list */
@@ -378,10 +378,12 @@ tr.hit td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
 .arena-side .arena-legend { border-top: 1px solid var(--line); padding: 10px 12px; font-size: 12px; display: grid; gap: 4px; }
 .arena-side .arena-steps li { grid-template-columns: 40px 1fr; }
 .arena.compact { grid-template-columns: minmax(0, 1fr) 280px; }
-@media (max-width: 980px) {
+/* steps beside the 3D view when there is room for both, else below it */
+.view { container-type: inline-size; }
+@container (max-width: 820px) {
   .arena, .arena.compact { grid-template-columns: 1fr; }
-  .arena-side { border-left: 0; border-top: 1px solid var(--line); }
-  .arena-side .arena-steps { max-height: 260px !important; }
+  .arena-side { border-left: 0; border-top: 1px solid var(--line); height: auto !important; }
+  .arena-side .arena-steps { max-height: 240px; }
 }
 
 /* Try it: scenarios in a row above, 3D + steps get the full width */
@@ -403,16 +405,16 @@ tr.hit td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
 
 /* menu: "Check the proof" dropdown */
 .links { align-items: center; }
-.more { position: relative; }
-.more summary { list-style: none; cursor: pointer; font-weight: 500; font-size: 15px; color: var(--ink-2); padding: 7px 12px; border-radius: 9px; }
-.more summary::-webkit-details-marker { display: none; }
-.more summary::after { content: " ▾"; font-size: 11px; }
-.more summary:hover, .more.on summary { background: #ebeae4; color: var(--ink); }
-.more-list { position: absolute; top: 40px; left: 0; width: 300px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); padding: 6px; display: grid; gap: 2px; z-index: 40; }
-.more-list a { display: grid; gap: 2px; padding: 9px 11px !important; }
-.more-list a b { font-size: 14.5px; color: var(--ink); }
-.more-list a span { font-size: 12.5px; color: var(--muted); font-weight: 400; }
-@media (max-width: 860px) { .more-list { position: static; width: auto; box-shadow: none; border: 0; } }
+.navmore { position: relative; }
+.navmore summary { list-style: none; cursor: pointer; font-weight: 500; font-size: 15px; color: var(--ink-2); padding: 7px 12px; border-radius: 9px; }
+.navmore summary::-webkit-details-marker { display: none; }
+.navmore summary::after { content: " ▾"; font-size: 11px; }
+.navmore summary:hover, .navmore.on summary { background: #ebeae4; color: var(--ink); }
+.navmore-list { position: absolute; top: 40px; left: 0; width: 300px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); padding: 6px; display: grid; gap: 2px; z-index: 40; }
+.navmore-list a { display: grid; gap: 2px; padding: 9px 11px !important; }
+.navmore-list a b { font-size: 14.5px; color: var(--ink); }
+.navmore-list a span { font-size: 12.5px; color: var(--muted); font-weight: 400; }
+@media (max-width: 860px) { .navmore-list { position: static; width: auto; box-shadow: none; border: 0; } }
 
 /* page guide */
 .guide { display: grid; grid-template-columns: 220px 1fr; gap: 16px; padding: 14px 18px; margin: 0 0 18px; border-left: 4px solid var(--accent, #b9f227); }
@@ -433,5 +435,8 @@ tr.hit td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
 .start { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; align-items: center; margin-top: 22px; }
 @media (max-width: 860px) { .strip { grid-template-columns: 1fr 1fr; } .strip-step::after { display: none; } }
 
-.more { display: flex; align-items: center; }
-.more summary { display: block; line-height: 1.4; }
+
+/* the caption is a bar under the 3D view, never on top of it */
+.arena-caption { position: static; max-width: none; border-radius: 0; min-height: 96px; box-sizing: border-box; backdrop-filter: none; background: #15171c; }
+
+.navmore { padding: 0; }
