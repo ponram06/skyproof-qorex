@@ -4,6 +4,26 @@
 
 QoreChain *Build Before Q-Day* · category **Protocol Builders** · rollup [`skyproof-1`](https://api-testnet.qore.host/qorechain/rdk/v1/rollup/skyproof-1) on `qorechain-diana`
 
+[![Tests](https://github.com/ponram06/skyproof-qorex/actions/workflows/test.yml/badge.svg)](https://github.com/ponram06/skyproof-qorex/actions/workflows/test.yml)
+
+## For judges: verify it in 3 minutes
+
+**Live site: https://skyproof-qorex.malaysiawest.cloudapp.azure.com** (no wallet or install needed)
+
+1. **Watch it (30 s).** Home → *Try it* → **Operator ignores "No"**: the drone drops on a person after its safety check said No. Then **Too windy**: a gust blows the parcel onto a car.
+2. **Follow one real flight (60 s).** **Guided demo**: one flight from take-off to payout. Every *Check* button asks QoreChain live from your browser.
+3. **Open a sealed record (30 s).** *Check the proof* → **Investigate**, demo code **`skyproof-demo`**. A wrong code leaves it sealed (ML-KEM-1024).
+4. **Be the insurer (30 s).** **Insurers**, demo code **`skyproof-demo`**: check a real and a fake photo against the fingerprint on chain, open the record, approve or reject. In demo mode the decision is shown, not posted.
+5. **Check the chain (30 s).** [EVIDENCE.md](docs/EVIDENCE.md): every step from rollup creation to payout and the upheld fraud proof, one click each. [ATTACKS.md](docs/ATTACKS.md): 19 attacks refused, each with a test or a transaction.
+
+| | |
+|---|---|
+| Testnet transactions | [EVIDENCE.md](docs/EVIDENCE.md) (short) · [DEPLOYMENTS.md](docs/DEPLOYMENTS.md) (everything) |
+| Settlement receipts | all 12 batches: `cd rollup && npm run receipt -- all` (saved in [`rollup/receipts/`](rollup/receipts), still checkable after QoreChain prunes old batches: add `--saved`) |
+| Tests | 56, run in CI on every push: `cd rollup && npm test` |
+| Payout audit | 5 of 5 payouts justified: `cd rollup && npm run audit` |
+| Known limits | [THREAT_MODEL.md](docs/THREAT_MODEL.md#known-limits-stated-plainly) |
+
 ## The problem
 
 When an autonomous drone hurts someone, the only flight log belongs to the operator. It can be edited, lost or withheld, and once a quantum computer can forge ECDSA, a classical signature on it proves nothing.
@@ -29,9 +49,18 @@ flowchart LR
 4. **Watch.** The watchtower re-executes every batch, **challenges a wrong root with a fraud proof**, opens claimed flights and judges them against six rules.
 5. **Claim.** A victim files a claim from the website. They name the drone (its painted ID or Remote ID broadcast) and the time, and the page finds the flight that was in the air then. A flight the operator never published can still be claimed: if no record appears within ~30 minutes, the claim goes to the insurer marked "no record". The claim holds what happened, when, where, a photo fingerprint (SHA-256; the photo stays on their phone) and a **1 QOR refundable deposit**, all in one hybrid-signed transaction from a quantum-safe wallet the page creates in the browser.
 6. **Pay or review.** A breach pays the victim **5 QOR plus their deposit back** from the claims pool (the operator's bond) as a **qledger withdrawal**, executed on QoreChain once the batch is final. No breach sends the claim to the **insurer**, who checks the photo against its fingerprint, opens the sealed record and signs a decision: approved → paid the same way; rejected as false → nothing paid, deposit kept. Deposits make spam and false claims cost money.
-7. **Audit.** Only the watchtower holds the pool key, and qledger has no multi-signature, so a separate program (`npm run audit`) rebuilds everything from the chain and matches every pool payout to a claim that was owed. On testnet: 4 of 4 justified. Known limits, stated plainly, are in the [threat model](docs/THREAT_MODEL.md#known-limits-stated-plainly).
+7. **Audit.** Only the watchtower holds the pool key, and qledger has no multi-signature, so a separate program (`npm run audit`) rebuilds everything from the chain and matches every pool payout to a claim that was owed. On testnet: 5 of 5 justified. Known limits, stated plainly, are in the [threat model](docs/THREAT_MODEL.md#known-limits-stated-plainly).
 
-**Judges: start with the website's Demo page.** It follows one real flight from take-off to payout in seven steps, and every "Check" button asks QoreChain live from your browser.
+## Why QoreChain
+
+SkyProof needs records that stay trustworthy for years: an accident claim or a court case can come long after the flight. A classical signature on a flight log stops proving anything once quantum computers can forge it. QoreChain gives SkyProof, natively:
+
+- **ML-DSA-87 on every account and every transaction** (hybrid with secp256k1): drones, the operator, victims and the insurer all sign quantum-safe, including from a browser.
+- **ML-KEM-1024 keys registered on chain**: flight records are sealed to the investigator and insurer, so the chain holds the proof without exposing where people were.
+- **x/rdk rollups with qledger-v1**: a rollup with its own ledger, fraud proofs, and withdrawals paid out on QoreChain, without writing a settlement contract.
+- **Settlement receipts**: anyone can check that a batch was anchored under the creator's ML-DSA-87 signature.
+
+On a chain with only ECDSA, every one of these would be either missing or classical.
 
 ## Protocol Builders requirements
 
@@ -61,14 +90,14 @@ flowchart LR
 |---|---|
 | [`rollup/`](rollup) | TypeScript: records, sealing, rules, ledger, watchtower, CLI for every step |
 | [`web/`](web) | Website (pages below) |
-| [`docs/`](docs) | [Design](docs/DESIGN.md), [threat model](docs/THREAT_MODEL.md), [deployments](docs/DEPLOYMENTS.md) |
+| [`docs/`](docs) | [Design](docs/DESIGN.md), [threat model](docs/THREAT_MODEL.md), [evidence](docs/EVIDENCE.md), [attacks](docs/ATTACKS.md), [deployments](docs/DEPLOYMENTS.md) |
 
 ## The website
 
 | Page | For | What it does |
 |---|---|---|
 | **Demo** | Judges | One real flight end to end in seven steps, with live checks: each signed part matched byte for byte with QoreChain's copy, a tamper attempt, the claim, the verdict, the payout tx and the fraud-proof tx read from the chain |
-| **Home** | Everyone | 3D demo of all eight scenarios, judged in the browser by the same rules code as the watchtower |
+| **Home** | Everyone | 3D demo of four situations (safe, waits for a person, person hit, car hit in wind), judged in the browser by the same rules code as the watchtower |
 | **Flights** | Everyone | Real flights, their ML-DSA-87 signatures and a tamper test |
 | **Claims** | Victims | File a claim from a quantum-safe browser wallet: name the drone and the time, and the page finds the flight that was in the air (or claim one the operator never published). Deposit, photo fingerprint, and a live lookup of your claims and balance |
 | **Insurers** | Insurer | Claims sent to review: check the victim's photo, open the sealed record, approve or reject with a signed decision |
@@ -83,7 +112,7 @@ Needs Node 22+. Tests and the dry run need no wallet and spend nothing:
 ```sh
 cd rollup
 npm install
-npm test           # 52 tests
+npm test           # 56 tests
 npm run dry-run    # every scenario end to end, offline
 ```
 
@@ -102,7 +131,7 @@ npm run watch                     # re-execute, judge, pay out (--loop to keep w
 npm run audit                     # independently re-derive what was owed and match every pool payout
 npm run batch                     # settle the payout
 npm run withdraw                  # after the challenge window
-npm run receipt -- <batch>        # verify the settlement receipt
+npm run receipt -- <batch>        # verify the settlement receipt (or: all; add --saved for pruned batches)
 ```
 
 Website: `cd web && npm install && npm run dev` (data from `npm run export-web` in `rollup/`).
@@ -116,7 +145,10 @@ Deploy the website, either way:
 
 - [`@qorechain/rdk`](https://github.com/qorechain/qorechain-rdk) (Apache-2.0): rollup client, qledger-v1, envelopes, settlement receipts.
 - [`@qorechain/sdk`](https://github.com/qorechain/qorechain-sdk): accounts and hybrid ML-DSA-87 signing.
-- [`@noble/hashes`](https://github.com/paulmillr/noble-hashes) (MIT), [Vite](https://vitejs.dev) (MIT).
+- [`@noble/hashes`](https://github.com/paulmillr/noble-hashes) (MIT), [`@cosmjs/stargate`](https://github.com/cosmos/cosmjs) (Apache-2.0), [`dotenv`](https://github.com/motdotla/dotenv) (BSD-2-Clause).
+- Website: [Vite](https://vitejs.dev) (MIT), [three.js](https://threejs.org) (MIT) for the 3D demo, [Leaflet](https://leafletjs.com) (BSD-2-Clause) with map data © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors (ODbL).
+- QoreX logo on the 3D drone: QoreChain's, used to mark the hackathon entry.
+- Hosting: an Azure VM with nginx and a Let's Encrypt certificate.
 
 The idea (a tamper-evident drone black box with automatic payouts) was first prototyped by our team at ETHGlobal Mumbai on other chains. This repository is a new build for QoreChain, written during the fest. How AI was used: [AI_USAGE.md](AI_USAGE.md).
 
