@@ -69,22 +69,28 @@ function labelTexture(text: string, fg: string, bg: string, w = 256, h = 256, fo
 
 function sprite(text: string, color: string) {
   const c = document.createElement("canvas");
-  c.width = 512;
+  const font = "700 52px ui-monospace, Menlo, Consolas, monospace";
+  const m = c.getContext("2d")!;
+  m.font = font;
+  // wide enough for the whole text, so nothing is cut off
+  c.width = Math.max(512, Math.ceil(m.measureText(text).width) + 64);
   c.height = 128;
   const g = c.getContext("2d")!;
   g.fillStyle = "rgba(17,17,17,0.85)";
   g.beginPath();
-  g.roundRect(8, 20, 496, 88, 18);
+  g.roundRect(8, 20, c.width - 16, 88, 18);
   g.fill();
   g.fillStyle = color;
-  g.font = "700 52px ui-monospace, Menlo, Consolas, monospace";
+  g.font = font;
   g.textAlign = "center";
   g.textBaseline = "middle";
-  g.fillText(text, 256, 66);
+  g.fillText(text, c.width / 2, 66);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
-  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, depthWrite: false }));
-  s.scale.set(32, 8, 1);
+  // drawn on top of everything, so the drone or a building never hides a label
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, depthWrite: false, depthTest: false }));
+  s.renderOrder = 10;
+  s.scale.set(32 * (c.width / 512), 8, 1);
   return s;
 }
 
@@ -433,17 +439,17 @@ export function mountArena(root: HTMLElement, recs: Rec[], permit: Permit, verdi
   if (dropPad) padMesh(dropPad, "DROP", "#ff9f1c");
   const homeSign = sprite("HOME BASE", "#b9f227");
   homeSign.position.set(track[0].p.x - 14, 34, track[0].p.z - 14);
-  homeSign.scale.set(13, 3.25, 1);
+  homeSign.scale.set(3.25 * (homeSign.scale.x / 8), 3.25, 1);
   scene.add(homeSign);
   if (dropPad) {
     const dropSign = sprite("DELIVERY ADDRESS", "#ffb44d");
     dropSign.position.set(dropPad.x - 8, 26, dropPad.z);
-    dropSign.scale.set(15, 3.75, 1);
+    dropSign.scale.set(3.75 * (dropSign.scale.x / 8), 3.75, 1);
     scene.add(dropSign);
   }
   const ceilSign = sprite(`${permit.maxAltM} m HEIGHT LIMIT`, "#b8a9ff");
   ceilSign.position.set(R * 0.7, ceilY + 3, -R * 0.7); // out at the edge of the permit area
-  ceilSign.scale.set(16, 4, 1);
+  ceilSign.scale.set(4 * (ceilSign.scale.x / 8), 4, 1);
   scene.add(ceilSign);
 
   // Windsock at home base: leans with the wind.
@@ -461,7 +467,7 @@ export function mountArena(root: HTMLElement, recs: Rec[], permit: Permit, verdi
   scene.add(link);
   const linkLostAt = recs.find((r) => r.k === "ACTION" && r.act === "SAFE_STOP")?.t;
   const lostSign = sprite("SIGNAL LOST", "#ff6b5e");
-  lostSign.scale.set(13, 3.25, 1);
+  lostSign.scale.set(3.25 * (lostSign.scale.x / 8), 3.25, 1);
   lostSign.visible = false;
   scene.add(lostSign);
 
@@ -514,11 +520,11 @@ export function mountArena(root: HTMLElement, recs: Rec[], permit: Permit, verdi
   padRing.visible = false;
   scene.add(padRing);
   const personSign = sprite("PERSON BELOW", "#ffb44d");
-  personSign.scale.set(12, 3, 1);
+  personSign.scale.set(3 * (personSign.scale.x / 8), 3, 1);
   personSign.visible = false;
   scene.add(personSign);
   const hitSign = sprite("INJURED: HIT BY THE PARCEL", "#ff6b5e");
-  hitSign.scale.set(16, 4, 1);
+  hitSign.scale.set(4 * (hitSign.scale.x / 8), 4, 1);
   hitSign.visible = false;
   scene.add(hitSign);
 
@@ -770,7 +776,7 @@ export function mountArena(root: HTMLElement, recs: Rec[], permit: Permit, verdi
       personSign.visible = there && !hit;
       personSign.position.set(atPad.position.x + 6, 10, atPad.position.z);
       hitSign.visible = hit;
-      hitSign.position.set(atPad.position.x + 6, 10, atPad.position.z);
+      hitSign.position.set(atPad.position.x, 7, atPad.position.z + 8);
       atPad.rotation.z = (-Math.PI / 2) * fall;
       atPad.position.y = 0.65 + 0.55 * fall;
       if (hit) {
@@ -844,7 +850,7 @@ export function mountArena(root: HTMLElement, recs: Rec[], permit: Permit, verdi
     const watchAccident = accident && camMode === "follow" && simT > dropAct!.t - 2500 && simT < HIT_AT + 4000;
     if (watchAccident) {
       const pp = atPad.position;
-      camera.position.lerp(new THREE.Vector3(pp.x + 8, pp.y + 55, pp.z + 8), 0.06); // high above: no building in the way
+      camera.position.lerp(new THREE.Vector3(pp.x + 26, pp.y + 34, pp.z + 26), 0.06); // from the side and above: the drone doesn't cover the person
       controls.target.lerp(new THREE.Vector3(pp.x, pp.y + 2, pp.z), 0.1);
     } else if (camMode === "follow") {
       if (vel.lengthSq() > 1e-4) heading.copy(vel).setY(0).normalize();
