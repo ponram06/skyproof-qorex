@@ -11,6 +11,6 @@ Speak slowly; each block is one shot. Most of it is the **Demo** page, which fol
 | 1:05–1:20 | Step 3 → **Try to edit the record** | "If anyone edits the record, even the operator, the drone's quantum-safe signature breaks." |
 | 1:20–1:50 | Steps 4–6 → **Check the payment** | "The victim filed a claim. The watchtower opened the sealed record and found rule four broken: Respect a No. The victim was paid 5 QOR automatically, and here is the payment confirmed on chain." |
 | 1:50–2:10 | Step 7 → **Check the fraud proof** | "When the operator posted a fake batch, the watchtower proved it on chain and QoreChain slashed 1,000 QOR from their bond." |
-| 2:10–2:35 | Claims → the claim form | "Anyone can file a claim from here with a 1 QOR deposit, a photo fingerprint, when and where. If no rule was broken, an insurer reviews it; a false claim loses its deposit, so spam costs money." |
-| 2:35–2:50 | Insurers, then Operators | "The insurer checks the photo and opens the sealed record before deciding. The operator sees every drone, flight and claim against them, with the rollup read live." |
+| 2:10–2:30 | Claims → pick drone SKY-001, set a time on 23 Nov 12:54 | "A victim names the drone and the time; the page finds the flight that was in the air. If the operator hid the flight, 'my flight isn't listed' still works: after 30 minutes with no record, the insurer decides. A 1 QOR deposit makes false claims cost money." |
+| 2:30–2:50 | Proof → Independent payout audit | "Only the watchtower holds the pool key, so a separate program rebuilds everything from the chain and checks every payout was owed. Four of four are justified." |
 | 2:50–3:00 | Home, top | "SkyProof: every drone flight, on the record. Built on QoreChain for Build Before Q-Day." |
