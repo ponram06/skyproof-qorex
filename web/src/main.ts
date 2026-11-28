@@ -23,6 +23,8 @@ interface Data {
   batches: { index: number; status: string; inboxStart: number; inboxEnd: number; submittedTime: number; tx?: string; withdrawals: { index?: string; recipient: string; amount: string }[] }[];
   headers: { batch: number; seq: number; height: number; post: string }[];
   bodies?: Record<string, string>;
+  /** Hashes of the sealed bodies; the bodies themselves are in skyproof-bodies.json. */
+  bodyHashes?: string[];
   posts: { batch: number; seq: number; height: number; poster: string; kind: string; detail: string }[];
   fraud?: { tx: string; height: number; batch: string; challenger: string; slashed: string; burned: string }[];
   withdrawalsExecuted?: Record<string, string>;
@@ -85,6 +87,17 @@ const FLIGHT_NAME: Record<string, string> = {
 
 /* ================= helpers ================= */
 
+/** The sealed bodies (ciphertext), fetched only when someone opens a record. */
+let bodiesOf = "";
+async function withBodies() {
+  if (data.bodies && bodiesOf === data.generatedAt) return;
+  if (!data.bodyHashes) return; // an older data file that still carries the bodies inline
+  const res = await fetch("/skyproof-bodies.json", { cache: "no-store" });
+  if (!res.ok) throw new Error(`couldn't load the sealed records (HTTP ${res.status})`);
+  data.bodies = await res.json();
+  bodiesOf = data.generatedAt;
+}
+
 const client = createRdkClient({ network: "testnet", endpoints: { rest: `${location.origin}/api/rest`, rpc: `${location.origin}/api/rpc` } });
 const $ = <T extends HTMLElement = HTMLElement>(sel: string, root: ParentNode = document) => root.querySelector<T>(sel)!;
 const $$ = <T extends HTMLElement = HTMLElement>(sel: string, root: ParentNode = document) => [...root.querySelectorAll<T>(sel)];
@@ -137,7 +150,7 @@ const disposeArenas = () => {
 
 function buildFlights(d: Data): Flight[] {
   const by = new Map<string, Segment[]>();
-  const bodies = new Set(Object.keys(d.bodies ?? {}));
+  const bodies = new Set(d.bodyHashes ?? Object.keys(d.bodies ?? {}));
   for (const h of d.headers) {
     const p = parseHeaderPost(h.post);
     const list = by.get(p.header.flight) ?? by.set(p.header.flight, []).get(p.header.flight)!;
@@ -953,9 +966,10 @@ function investigateReady() {
       out.innerHTML = `<p class="alert">That isn't a key file.</p>`;
     }
   });
-  btn.addEventListener("click", () => {
+  btn.addEventListener("click", async () => {
     if (!key) return;
     try {
+      await withBodies();
       const r = openFlight(data as unknown as InvestigatorData, $<HTMLSelectElement>("#invFlight").value, key);
       out.innerHTML = `<div class="inv">
         <div id="invView" class="view"></div>
@@ -1083,13 +1097,14 @@ function insurerReady() {
     }),
   );
   $$<HTMLButtonElement>("[data-open]").forEach((btn) =>
-    btn.addEventListener("click", () => {
+    btn.addEventListener("click", async () => {
       const i = Number(btn.dataset.open);
       if (!kem) {
         $(`#rv${i}`).innerHTML = `<p class="alert">Load the insurer key file first: it opens the sealed record.</p>`;
         return;
       }
       try {
+        await withBodies();
         const r = openFlight(data as unknown as InvestigatorData, data.claims[i].flight, kem);
         $(`#rv${i}`).innerHTML = `<div class="inv-mini"><div class="rules">${ruleList(brokenRules(r.verdict))}</div>
           <p class="tiny muted">${r.segments} sealed parts opened · ${r.recs.length} records${r.errors.length ? " · problems: " + esc(r.errors.join("; ")) : " · all match the drone's signatures"}</p>
@@ -1591,6 +1606,7 @@ function demoReady() {
           const k = await fetch("demo-investigator.json").then((x) => x.json());
           demoKem = { address: k.address, seed: k.mlkem1024Seed };
         }
+        await withBodies();
         const r = openFlight(data as unknown as InvestigatorData, f.id, demoKem);
         $("#d5out").innerHTML = `<div class="inv-mini"><div class="result ${r.verdict.breach ? "bad" : "ok"}"><span class="icon">${r.verdict.breach ? "✕" : "✓"}</span><div><b>${r.verdict.breach ? "Rule broken" : "No rule broken"}</b><span>${r.segments} sealed parts opened · ${r.recs.length} records${r.errors.length ? ` · problems: ${esc(r.errors.join("; "))}` : " · every part matches the drone's signature"}</span></div></div>
           <div class="rules">${ruleList(brokenRules(r.verdict))}</div>${r.permit ? `<div class="mapbox">${drawFlight(r.recs, r.permit, r.verdict)}</div>` : ""}</div>`;

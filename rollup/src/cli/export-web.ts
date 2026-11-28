@@ -115,7 +115,8 @@ async function main() {
     drones,
     batches: batches.map((b) => ({ ...b, tx: submitter.batches?.find((s) => s.index === b.index)?.tx, withdrawals: submitter.batches?.find((s) => s.index === b.index)?.withdrawals ?? [] })),
     headers,
-    bodies,
+    // The sealed bodies (ciphertext) go in their own file, loaded only to open a record.
+    bodyHashes: Object.keys(bodies),
     posts,
     claims: tower.watch?.claims ?? [],
     // What the website needs to file a claim (deposit into the pool) and to show the insurer desk.
@@ -137,7 +138,10 @@ async function main() {
   const file = process.env.SKYPROOF_WEB_OUT ?? resolve(process.cwd(), "../web/public/skyproof.json");
   mkdirSync(dirname(file), { recursive: true });
   // Write then rename, so the website never reads a half-written file.
-  writeFileSync(`${file}.tmp`, JSON.stringify(out, null, 1));
+  const bodiesFile = file.replace(/\.json$/, "-bodies.json");
+  writeFileSync(`${bodiesFile}.tmp`, JSON.stringify(bodies));
+  renameSync(`${bodiesFile}.tmp`, bodiesFile);
+  writeFileSync(`${file}.tmp`, JSON.stringify(out));
   renameSync(`${file}.tmp`, file);
   console.log(`exported ${batches.length} batches, ${headers.length} signed headers, ${posts.length} posts, ${out.claims.length} claims`);
 }

@@ -26,6 +26,7 @@ const tx = async (h: string) => ((await fetch(`${REST}/cosmos/tx/v1beta1/txs/${h
 async function main() {
   console.log(`SkyProof judge check · rollup ${ROLLUP} on ${rdk.network.chainId} · ${new Date().toISOString()}\n`);
   const site = (await fetch(`${SITE}/skyproof.json`).then((r) => r.json())) as {
+    bodyHashes?: string[];
     batches: { index: number; withdrawals: { index?: string }[] }[];
     bodies?: Record<string, string>;
     posts: { seq: number; kind: string }[];
@@ -69,6 +70,7 @@ async function main() {
   }
 
   // 6. ML-KEM data protection: keys registered on chain, and the chain holds only ciphertext.
+  site.bodies ??= (await fetch(`${SITE}/skyproof-bodies.json`).then((r) => r.json())) as Record<string, string>;
   const inv = (await fetch(`${SITE}/demo-investigator.json`).then((x) => x.json())) as { address: string };
   const keys = await Promise.all([inv.address, site.insurer ?? ""].map((a) => rdk.rest.getKemKey(a).catch(() => undefined)));
   const sealed = site.posts.filter((p) => p.kind === "sealed body").slice(-3);
