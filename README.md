@@ -8,18 +8,23 @@ QoreChain *Build Before Q-Day* · category **Protocol Builders** · rollup [`sky
 
 ## For judges: verify it in 3 minutes
 
-**Live site: https://skyproof-qorex.malaysiawest.cloudapp.azure.com** (no wallet or install needed)
+**Live site: https://skyproof-qorex.malaysiawest.cloudapp.azure.com** (no wallet, no QOR, no install; works on a phone)
 
-1. **Watch it (30 s).** Home → *Try it* → **Operator ignores "No"**: the drone drops on a person after its safety check said No. Then **Too windy**: a gust blows the parcel onto a car.
-2. **Follow one real flight (60 s).** **Guided demo**: one flight from take-off to payout. Every *Check* button asks QoreChain live from your browser.
-3. **Open a sealed record (30 s).** *Check the proof* → **Open a sealed record**, demo code **`skyproof-demo`**. A wrong code leaves it sealed (ML-KEM-1024).
-4. **Be the insurer (30 s).** **Insurers**, demo code **`skyproof-demo`**: check a real and a fake photo against the fingerprint on chain, open the record, approve or reject. In demo mode the decision is shown, not posted.
-5. **Check the chain (30 s).** [EVIDENCE.md](docs/EVIDENCE.md): every step from rollup creation to payout and the upheld fraud proof, one click each. [ATTACKS.md](docs/ATTACKS.md): 19 attacks refused, each with a test or a transaction.
+1. **Play every role, live on chain (5 min + the 1 h challenge window).** **Live demo**: fly a delivery as the operator (16 signed, sealed posts), get hurt by it and file a claim from a fresh wallet the demo faucet funds, watch the watchtower judge it, decide it as the insurer if no rule was broken, open the sealed record as the investigator, and watch the payout reach your wallet. The page remembers your run: come back after the challenge window to see the money arrive.
+2. **Watch it (30 s).** Home → *Try it* → **Operator ignores "No"**: the drone drops on a person after its safety check said No. Then **Too windy**: a gust blows the parcel onto a car.
+3. **Follow one past flight (60 s).** **Guided tour**: one flight from take-off to payout. Every *Check* button asks QoreChain live from your browser.
+4. **Open a sealed record (30 s).** *Check the proof* → **Open a sealed record**, demo code **`skyproof-demo`**. A wrong code leaves it sealed (ML-KEM-1024).
+5. **Be the insurer (30 s).** **Insurers**, demo code **`skyproof-demo`**: check a real and a fake photo against the fingerprint on chain and open the record. The practice claim is a dry run; claims **you** filed in the live demo are decided for real, signed with the insurer's key.
+6. **Check the chain (1 min).** `cd rollup && npm install && npm run judge`: every requirement checked against testnet, PASS/FAIL, no keys needed. [EVIDENCE.md](docs/EVIDENCE.md): every step from rollup creation to payout and the upheld fraud proof, one click each. [ATTACKS.md](docs/ATTACKS.md): 19 attacks refused, each with a test or a transaction.
+
+**What is simulated, and what is not.** The drone flights come from a seeded flight simulator (there is no real drone), and the demo claims are filed by judges or by us. Everything else is real on QoreChain testnet: every flight part, claim, deposit, batch, verdict input, insurer decision, payout and withdrawal is a transaction you can look up. Apart from the home page's *Try it* animation (a simulation in your browser, labelled as one), every flight, claim, verdict, payout and number on the website is read from the chain; its data file is re-exported from the chain every minute by the always-on service.
 
 | | |
 |---|---|
 | Testnet transactions | [EVIDENCE.md](docs/EVIDENCE.md) (short) · [DEPLOYMENTS.md](docs/DEPLOYMENTS.md) (everything) |
-| Settlement receipts | all 12 batches: `cd rollup && npm run receipt -- all` (saved in [`rollup/receipts/`](rollup/receipts), still checkable after QoreChain prunes old batches: add `--saved`) |
+| One-command check | `cd rollup && npm run judge` (read-only, no keys) |
+| Always-on service | [`rollup/src/cli/service.ts`](rollup/src/cli/service.ts): settles batches, runs the watchtower, executes withdrawals, serves the judges' demo API ([`deploy/skyproof.service`](deploy/skyproof.service)) |
+| Settlement receipts | the first 12 batches: `cd rollup && npm run receipt -- all` (saved in [`rollup/receipts/`](rollup/receipts), still checkable after QoreChain prunes old batches: add `--saved`) |
 | Tests | 56, run in CI on every push: `cd rollup && npm test` |
 | Payout audit | 5 of 5 payouts justified: `cd rollup && npm run audit` |
 | Known limits | [THREAT_MODEL.md](docs/THREAT_MODEL.md#known-limits-stated-plainly) |
@@ -96,12 +101,13 @@ On a chain with only ECDSA, every one of these would be either missing or classi
 
 | Page | For | What it does |
 |---|---|---|
-| **Demo** | Judges | One real flight end to end in seven steps, with live checks: each signed part matched byte for byte with QoreChain's copy, a tamper attempt, the claim, the verdict, the payout tx and the fraud-proof tx read from the chain |
+| **Live demo** | Judges | Play every role on chain: fly, claim (faucet-funded wallet), watchtower verdict, insurer decision, sealed record, payout, with a live progress tracker |
+| **Guided tour** | Judges | One real flight end to end in seven steps, with live checks: each signed part matched byte for byte with QoreChain's copy, a tamper attempt, the claim, the verdict, the payout tx and the fraud-proof tx read from the chain |
 | **Home** | Everyone | 3D demo of four situations (safe, waits for a person, person hit, car hit in wind), judged in the browser by the same rules code as the watchtower |
 | **Flights** | Everyone | Real flights, their ML-DSA-87 signatures and a tamper test |
-| **Claims** | Victims | File a claim from a quantum-safe browser wallet: name the drone and the time, and the page finds the flight that was in the air (or claim one the operator never published). Deposit, photo fingerprint, and a live lookup of your claims and balance |
-| **Insurers** | Insurer | Claims sent to review: check the victim's photo, open the sealed record, approve or reject with a signed decision |
-| **Operators** | Drone operators | Your drones, flight log, bond, claims against you and their cost, and the rollup inbox read live |
+| **Claims** | Victims | (Judges: one-click demo faucet.) File a claim from a quantum-safe browser wallet: name the drone and the time, and the page finds the flight that was in the air (or claim one the operator never published). Deposit, photo fingerprint, and a live lookup of your claims and balance |
+| **Insurers** | Insurer | Claims sent to review: check the victim's photo, open the sealed record, approve or reject with a signed decision (judges' own demo claims: posted for real with the demo code) |
+| **Operators** | Drone operators | Fly a demo flight now; your drones, flight log, bond, claims against you and their cost, and the rollup inbox read live |
 | **Proof** | Anyone | Live settlement-receipt verification, every payout (amount, recipient, batch), the independent payout audit, upheld fraud proofs |
 | **Investigate** | Investigator | ML-KEM-1024 decryption and 3D replay of on-chain flights |
 
