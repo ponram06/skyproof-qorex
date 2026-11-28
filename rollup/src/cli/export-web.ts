@@ -3,17 +3,21 @@
  * SkyProof post in it (drone registration, signed segment headers, claims),
  * plus the watchtower's verdicts and executed withdrawals. Sealed bodies are
  * not exported: the site shows that they exist, not what they say.
- * Usage: export-web  →  ../web/public/skyproof.json
+ * Usage: export-web  →  ../web/public/skyproof.json (or $SKYPROOF_WEB_OUT)
+ *
+ * Each batch's inbox entries are cached in flights/local/entries.json the first
+ * time they are read (checked against the chain's inbox accumulator), so the
+ * export keeps working after QoreChain prunes old batch data.
  */
-import { mkdirSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
-import { EMPTY_INBOX_ACC, fetchQledgerEntries, isRestNotFound, qledgerAccumulate, decodeQledgerTx, decodeQledgerDeposit } from "@qorechain/rdk";
+import { mkdirSync, renameSync, writeFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { EMPTY_INBOX_ACC, fetchQledgerEntries, isRestNotFound, qledgerAccumulate, decodeQledgerTx, decodeQledgerDeposit, type QledgerEntry } from "@qorechain/rdk";
 import { rdk, ROLLUP_ID } from "../config.js";
 import { parseClaim, parseDecision, parseDroneReg, parseExit } from "../flight/posts.js";
 import { account, poolKey } from "../keys.js";
 import { isBodyPost, isHeaderPost, parseHeaderPost } from "../flight/segment.js";
-import { load } from "../state.js";
-import { hex, sha256 } from "../util.js";
+import { load, save } from "../state.js";
+import { hex, sha256, unhex } from "../util.js";
 import { CLAIM_DEPOSIT_UQOR, type WatchState } from "../watchtower.js";
 
 async function main() {
@@ -32,10 +36,19 @@ async function main() {
   const posts: { batch: number; seq: number; height: number; poster: string; kind: string; detail: string }[] = [];
   const batches = [];
   let acc: Uint8Array = EMPTY_INBOX_ACC;
+  type Cached = { inboxEnd: number; entries: { height: string; poster: string; payload: string }[] };
+  const cache = load<Record<string, Cached>>("entries", {});
 
   for (let i = 0; i <= latest; i++) {
     const b = await rdk.rest.getBatch(ROLLUP_ID, i);
-    const entries = await fetchQledgerEntries(rdk.rest, { ...env, from: b.inboxStart, to: b.inboxEnd, accFrom: acc });
+    const hit = cache[i];
+    let entries: QledgerEntry[];
+    if (hit && hit.inboxEnd === b.inboxEnd) {
+      entries = hit.entries.map((e) => ({ height: BigInt(e.height), poster: e.poster, payload: unhex(e.payload) }));
+    } else {
+      entries = await fetchQledgerEntries(rdk.rest, { ...env, from: b.inboxStart, to: b.inboxEnd, accFrom: acc });
+      cache[i] = { inboxEnd: b.inboxEnd, entries: entries.map((e) => ({ height: e.height.toString(), poster: e.poster, payload: hex(e.payload) })) };
+    }
     acc = qledgerAccumulate({ ...env, from: b.inboxStart, accFrom: acc, entries });
     entries.forEach((e, k) => {
       const seq = b.inboxStart + k + 1;
@@ -88,7 +101,12 @@ async function main() {
       fraud.push({ tx: r.txhash, height: Number(r.height), batch: a.batch_index, challenger: a.challenger, slashed: a.slashed, burned: a.burned });
     }
 
+  // The event index can be pruned too: keep every fraud proof seen before.
+  for (const f of load<typeof fraud>("fraud", [])) if (!fraud.some((x) => x.tx === f.tx)) fraud.push(f);
+  save("fraud", fraud);
+
   const tower = load<{ watch?: WatchState; log?: unknown[]; pending?: unknown[] }>("watchtower", {});
+  const demo = load<{ funded?: Record<string, unknown>; flights?: { flight: string }[] }>("demo", {});
   const submitter = load<{ batches?: { index: number; withdrawals: unknown[]; tx: string }[] }>("submitter", {});
   const out = {
     generatedAt: new Date().toISOString(),
@@ -106,12 +124,21 @@ async function main() {
     watchtower: tower.log ?? [],
     withdrawalsExecuted: load("withdrawals", {}),
     fraud,
+    // Payouts the judge has posted that no batch has executed yet.
+    pendingPayouts: tower.pending ?? [],
+    // Filing wallets the demo faucet funded and flights flown from the demo API (cli/service.ts):
+    // judges' own demo activity, shown as such on the site.
+    demoWallets: Object.keys(demo.funded ?? {}),
+    demoFlights: (demo.flights ?? []).map((f) => f.flight),
     // The independent payout audit (npm run audit), if it has been run.
     audit: load<unknown>("audit", undefined),
   };
-  const dir = resolve(process.cwd(), "../web/public");
-  mkdirSync(dir, { recursive: true });
-  writeFileSync(resolve(dir, "skyproof.json"), JSON.stringify(out, null, 1));
+  save("entries", cache);
+  const file = process.env.SKYPROOF_WEB_OUT ?? resolve(process.cwd(), "../web/public/skyproof.json");
+  mkdirSync(dirname(file), { recursive: true });
+  // Write then rename, so the website never reads a half-written file.
+  writeFileSync(`${file}.tmp`, JSON.stringify(out, null, 1));
+  renameSync(`${file}.tmp`, file);
   console.log(`exported ${batches.length} batches, ${headers.length} signed headers, ${posts.length} posts, ${out.claims.length} claims`);
 }
 
