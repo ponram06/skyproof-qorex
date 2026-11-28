@@ -20,8 +20,8 @@ import { claimPost, decisionPost, type Claim, type Decision } from "../../rollup
 const STORE = "skyproof.claimWallet.v1";
 const REST = `${location.origin}/api/rest`;
 const GAS_PRICE = 0.15; // uqor per gas, the SDK default
-/** What filing costs, with headroom for the fee: the 1 QOR refundable deposit + about 0.05 QOR fee. */
-export const CLAIM_FUNDS_QOR = 1.1;
+/** What filing costs: the 1 QOR refundable deposit, the one-time ML-DSA-87 key registration (about 0.22 QOR) and the claim fee. */
+export const CLAIM_FUNDS_QOR = 1.5;
 
 export interface ClaimWallet {
   mnemonic: string;
@@ -79,6 +79,10 @@ export async function createWallet(): Promise<ClaimWallet> {
   saveWallet(w);
   return w;
 }
+
+/** A fresh filing wallet that is not saved as this browser's claim wallet (the live demo keeps its own). */
+export const newWallet = (): Promise<ClaimWallet> => fromMnemonic(generateMnemonic(256));
+export const walletFrom = fromMnemonic;
 
 export async function restoreWallet(mnemonic: string): Promise<ClaimWallet> {
   const w = await fromMnemonic(mnemonic);

@@ -11,7 +11,7 @@ import { FLEET } from "../../rollup/src/flight/fleet";
 import type { Permit } from "../../rollup/src/rules";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { balanceUqor, CLAIM_FUNDS_QOR, createWallet, fileClaim, fileFingerprint, forgetWallet, keysFromFile, loadWallet, postDecision, restoreWallet, type ClaimWallet, type SigningKeys } from "./wallet";
+import { balanceUqor, CLAIM_FUNDS_QOR, createWallet, fileClaim, fileFingerprint, forgetWallet, keysFromFile, loadWallet, newWallet, postDecision, restoreWallet, type ClaimWallet, type SigningKeys } from "./wallet";
 
 /* ================= data ================= */
 
@@ -30,6 +30,9 @@ interface Data {
   claimsPool?: { account: string; depositUqor: string; payoutUqor: string };
   insurer?: string;
   watchtower?: { batch: number; valid: boolean; note: string }[];
+  pendingPayouts?: { nonce: string; amount: string; recipient: string; reason: string; tx: string }[];
+  demoWallets?: string[];
+  demoFlights?: string[];
   audit?: { checkedAt: string; batches: number; rows: { batch: number; recipient: string; amount: string; justified: boolean; reason: string }[]; owed: { recipient: string; amount: string; reason: string }[] };
 }
 
@@ -77,6 +80,7 @@ const FLIGHT_NAME: Record<string, string> = {
   normal: "Normal delivery",
   people_below: "Person below, drone waited",
   cheating: "Person below, operator dropped anyway",
+  wind: "Too windy, operator flew anyway",
 };
 
 /* ================= helpers ================= */
@@ -98,6 +102,19 @@ const flightTime = (id: string) => {
 };
 
 /** Ground distance in metres (equirectangular; fine at city scale). */
+/** When the drones flew, read from the flights on chain (per area, newest days first). */
+function flightDays() {
+  const by = new Map<string, Set<string>>();
+  for (const f of flights) {
+    const t = flightTime(f.id);
+    const area = FLEET[f.segs[0]?.header.drone]?.area.split(",")[0];
+    if (!t || !area) continue;
+    const day = t.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+    (by.get(day) ?? by.set(day, new Set()).get(day)!).add(area);
+  }
+  const days = [...by.entries()].sort((a, b) => new Date(b[0]).getTime() - new Date(a[0]).getTime()).slice(0, 3);
+  return days.length ? `drones flew on ${days.map(([d, a]) => `<b>${esc(d)}</b> (${[...a].map(esc).join(", ")})`).join(", ")}` : "no flights on record yet";
+}
 const distM = (a: { lat: number; lon: number }, b: { lat: number; lon: number }) =>
   Math.hypot((a.lat - b.lat) * 111_320, (a.lon - b.lon) * 111_320 * Math.cos((a.lat * Math.PI) / 180));
 
@@ -137,9 +154,10 @@ function buildFlights(d: Data): Flight[] {
     }
     const key = Object.keys(FLIGHT_NAME).find((k) => id.includes(`-${k}-`));
     const all = d.claims.filter((c) => c.flight === id);
+    const demoAt = d.demoFlights?.includes(id) ? flightTime(id) : undefined;
     return {
       id,
-      name: `${key ? FLIGHT_NAME[key] : id}${FLEET[segs[0].header.drone] ? ` · ${FLEET[segs[0].header.drone].area.split(",")[0]}` : ""}`,
+      name: `${key ? FLIGHT_NAME[key] : id}${FLEET[segs[0].header.drone] ? ` · ${FLEET[segs[0].header.drone].area.split(",")[0]}` : ""}${demoAt ? ` · judge demo ${demoAt.toLocaleString(undefined, { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}` : ""}`,
       segs,
       intact: segs.every((s) => s.sigOk && s.chainOk && s.sealed),
       records: segs.reduce((n, s) => n + s.header.n, 0),
@@ -215,7 +233,8 @@ function home() {
     </div>
     <div class="start">
       <span class="muted">Start here:</span>
-      <a class="btn primary" href="#/tour">I'm a judge: 3-minute guided demo</a>
+      <a class="btn primary" href="#/demo">I'm a judge: play every role live</a>
+      <a class="btn" href="#/tour">3-minute guided tour</a>
       <a class="btn" href="#/claims">A drone hurt me: file a claim</a>
       <button class="btn" data-scroll="demo">Just show me a flight</button>
     </div>
@@ -357,7 +376,7 @@ function claimsPage() {
   return `
   <section class="wrap page">
     <div class="head"><h1>File a claim</h1><p>Hurt by a drone, or your things damaged? Claim here. If the drone broke a safety rule you're paid automatically: 5 QOR plus your 1 QOR deposit back. If not, an insurer looks at your proof. A false claim loses its deposit.</p></div>
-    ${guide("People hurt by a drone", ["<b>Paste your wallet address</b> (your payout goes there), then send 1.1 test QOR to the filing address the page shows.", "<b>Click where it happened</b> on the map and say when. The page finds the drone that was there.", "<b>Say what happened</b>, add a photo if you have one, and file. Check back below with your address."])}
+    ${guide("People hurt by a drone", ["<b>Paste your wallet address</b> (your payout goes there), then send 1.5 test QOR to the filing address the page shows (judges: one click from the demo faucet).", "<b>Click where it happened</b> on the map and say when. The page finds the drone that was there.", "<b>Say what happened</b>, add a photo if you have one, and file. Check back below with your address."])}
     <section class="card file" id="file" aria-labelledby="fileTitle">
       <div class="file-head"><h2 id="fileTitle">File a claim</h2><span class="muted">Signed with a quantum-safe key (ML-DSA-87), straight from this page.</span></div>
       <div id="fileBox"></div>
@@ -393,9 +412,14 @@ async function liveClaimsOf(addr: string): Promise<(Claim & { txhash: string; he
 }
 
 let walletPoll: ReturnType<typeof setInterval> | undefined;
+let claimsRetried = false;
 
 function claimsReady() {
   const want = decodeURIComponent(location.hash.split("/")[2] ?? "");
+  if (want && !flights.some((f) => f.id === want) && !claimsRetried) {
+    claimsRetried = true;
+    refreshData().then((changed) => changed && route()).catch(() => undefined);
+  }
   renderFileBox(loadWallet(), flights.some((f) => f.id === want) ? want : undefined);
   if (want) requestAnimationFrame(() => $("#file").scrollIntoView({ block: "start" }));
   $("#lookup").addEventListener("submit", async (e) => {
@@ -407,6 +431,8 @@ function claimsReady() {
       out.innerHTML = `<p class="alert">That doesn't look like a QoreChain address. It starts with <b>qor1</b>.</p>`;
       return;
     }
+    out.innerHTML = `<p class="found"><i class="spin inline"></i>Reading your claims from QoreChain…</p>`;
+    await refreshData().catch(() => false);
     const mine = data.claims.filter((c) => c.victim === addr || c.payTo === addr);
     $$(`tr[data-victim="${CSS.escape(addr)}"]`).forEach((tr) => tr.classList.add("hit"));
     const paid = mine.filter((c) => c.status === "paid").length;
@@ -439,6 +465,7 @@ function claimsReady() {
         ? `<p class="found ok">${mine.length + fresh.length} claim${mine.length + fresh.length > 1 ? "s" : ""} found: <b>${paid} paid</b>, ${mine.filter((c) => c.status === "review").length} with the insurer, ${mine.filter((c) => c.status === "rejected").length} rejected${fresh.length ? `, <b>${fresh.length} just filed</b>` : ""}.${mine.length ? " Judged ones are highlighted below." : ""}${balance}</p>`
         : `<p class="found">No claims from this address on QoreChain.${balance}</p>`) +
       freshList +
+      mine.map((c) => `<details class="track-box"${c.status === "paid" && payoutFor(c)?.tx ? "" : " open"}><summary><b>“${esc(c.note)}”</b> ${claimBadge(c)}</summary>${claimTrack(c.flight, c.victim)}</details>`).join("") +
       (liveOk ? "" : `<p class="muted tiny">Couldn't reach QoreChain for claims filed since this page's data was saved.</p>`);
   });
 }
@@ -467,6 +494,7 @@ function renderFileBox(w: ClaimWallet | undefined, flight?: string) {
       </ol>
       <form id="wStart" class="lookup-row start-row"><input id="wPay" placeholder="qor1… your wallet address" autocomplete="off" spellcheck="false" value="${esc(savedPayTo())}" /><button class="btn primary">Continue</button></form>
       <p class="tiny muted">No wallet of your own? <button type="button" class="linkbtn" id="wNew">Keep the payout in a wallet this page makes</button> · <button type="button" class="linkbtn" id="wHave">Restore an earlier filing wallet</button></p>
+      <p class="judge-tip tiny"><b>Judges:</b> no QOR needed. Choose “Keep the payout in a wallet this page makes”, then press <b>Fund it from the demo faucet</b>. Or play every role at once on the <a class="link" href="#/demo">live demo</a>.</p>
       <form id="wRestore" class="file-restore" hidden>
         <label for="wWords" class="muted">Your 24 recovery words</label>
         <textarea id="wWords" rows="2" autocomplete="off" spellcheck="false"></textarea>
@@ -513,14 +541,15 @@ function renderFileBox(w: ClaimWallet | undefined, flight?: string) {
       <button class="btn sm" id="wCopy">Copy</button>
       <span class="badge plain" id="wBal">Checking…</span>
     </div>
-    <p class="fund" id="wFund" hidden>Send at least <b>${CLAIM_FUNDS_QOR} test QOR</b> to this address: a 1 QOR deposit (you get it back if your claim is right) plus the network fee. This page checks every few seconds.</p>
+    <div class="fund" id="wFund" hidden><p>Send at least <b>${CLAIM_FUNDS_QOR} test QOR</b> to this address: a 1 QOR deposit (you get it back if your claim is right) plus the network fee. This page checks every few seconds.</p>
+      <p class="tiny"><button type="button" class="btn sm" id="wFaucet">Judges: fund it from the demo faucet</button> <span class="muted">Sends 1.6 test QOR to this new, empty filing address. Limited per day.</span></p><p class="tiny" id="wFaucetOut"></p></div>
     <form id="claimForm" class="claim-form">
       <div class="q"><span class="q-t">1. Where did it happen?</span><span class="muted q-h">Click the map. The circles are where each registered drone is allowed to fly.</span><button type="button" class="btn sm" id="cGeo">Use my location</button></div>
       <div id="cMap" class="claim-map"></div>
       <p class="tiny muted" id="cPinNote">No place chosen yet.</p>
       <div class="two">
         <label><span>2. When did it happen?</span><input type="datetime-local" id="cWhen" />
-          <small class="muted">Demo: the testnet flights flew on <b>23 Nov 2026</b> (Kurla) and <b>25 Nov 2026</b> (Bandra, Andheri). <button type="button" class="linkbtn" id="cDemoTime">Use a time a flight was in the air</button></small></label>
+          <small class="muted">Demo: ${flightDays()}. <button type="button" class="linkbtn" id="cDemoTime">Use a time a flight was in the air</button></small></label>
         <label><span>3. Did you see the drone's ID? <em class="muted">(optional)</em></span><select id="cDrone"><option value="">No / not sure</option>${droneOpts}</select>
           <small class="muted">Painted on the drone, or shown by a Remote ID app.</small></label>
       </div>
@@ -536,7 +565,7 @@ function renderFileBox(w: ClaimWallet | undefined, flight?: string) {
       <label><span>Photo proof <em class="muted">(optional)</em></span><input type="file" id="cPhoto" accept="image/*" />
         <small class="muted">The photo stays on your device. Only its fingerprint (SHA-256) goes on chain, so when you show it to the insurer they can prove it is the same photo you filed.</small>
         <small class="mono" id="cPhotoHash"></small></label>
-      <div class="file-actions"><button class="btn primary" id="cSend" disabled>Pay 1 QOR deposit and file claim</button><span class="muted tiny">Deposit refunded with your payout · fee about 0.05 QOR</span></div>
+      <div class="file-actions"><button class="btn primary" id="cSend" disabled>Pay 1 QOR deposit and file claim</button><span class="muted tiny">Deposit refunded with your payout · fees about 0.3 QOR (the first one registers your quantum-safe key)</span></div>
     </form>
     <div id="fileOut" aria-live="polite"></div>
     <details class="wallet-more">
@@ -563,6 +592,19 @@ function renderFileBox(w: ClaimWallet | undefined, flight?: string) {
     if (!document.body.contains(box)) return clearInterval(walletPoll);
     if (!funded) refresh();
   }, 8000);
+  $("#wFaucet").onclick = async () => {
+    const out = $("#wFaucetOut");
+    $<HTMLButtonElement>("#wFaucet").disabled = true;
+    out.innerHTML = `<i class="spin inline"></i>Asking the demo faucet…`;
+    try {
+      const r = await svc<{ tx: string }>("/fund", { address: w.address });
+      out.innerHTML = `✓ Sent by the demo faucet: ${txLink(r.tx)}. The balance updates in a few seconds.`;
+      setTimeout(refresh, 4000);
+    } catch (e) {
+      out.innerHTML = `<span class="alert inline">${esc(e instanceof Error ? e.message : String(e))}</span>`;
+      $<HTMLButtonElement>("#wFaucet").disabled = false;
+    }
+  };
   $("#wCopy").onclick = async () => {
     try {
       await navigator.clipboard.writeText(w.address);
@@ -736,7 +778,14 @@ function renderFileBox(w: ClaimWallet | undefined, flight?: string) {
       out.innerHTML = `<div class="result ok"><span class="icon">✓</span><div><b>Claim filed on QoreChain, with your 1 QOR deposit.</b>
         <span>For “${esc(f?.name ?? `${drone} at ${when.replace("T", " ")} (no published flight)`)}” · block ${r.height.toLocaleString()} · fee ${qor(r.feeUqor.toString())} QOR</span>
         <span class="mono block">${esc(r.txhash)}</span></div></div>
-        <p class="muted tiny next">Next: the watchtower opens the sealed record and checks the six rules. Rule broken: 5 QOR plus your deposit go to your claim wallet. No rule broken: an insurer reviews your claim${evidence ? " (keep your photo to show them)" : ""}. Check back with your address below.</p>`;
+        <p class="muted tiny next">Next: the watchtower opens the sealed record and checks the six rules. Rule broken: 5 QOR plus your deposit go to your payout address. No rule broken: an insurer reviews your claim${evidence ? " (keep your photo to show them)" : ""}. Its progress, live:</p>
+        <div id="fileTrack">${claimTrack(flightId, w.address, r.txhash)}</div>`;
+      const track = setInterval(async () => {
+        const el = document.getElementById("fileTrack");
+        if (!el) return clearInterval(track);
+        await refreshData().catch(() => false);
+        el.innerHTML = claimTrack(flightId, w.address, r.txhash);
+      }, 20_000);
       $<HTMLTextAreaElement>("#cNote").value = "";
       $<HTMLInputElement>("#addr").value = payTo || w.address;
       refresh();
@@ -934,7 +983,7 @@ function insurerPage() {
   const practice = practiceClaim();
   const card = (c: Data["claims"][number], i: number) => {
     return `<div class="card review" data-i="${i}">
-      <div class="review-head"><div class="grow"><b>“${esc(c.note)}”</b><span class="muted">by <span class="mono">${esc(c.victim)}</span></span></div>${badge("warn", "Waiting for you")}</div>
+      <div class="review-head"><div class="grow"><b>“${esc(c.note)}”</b><span class="muted">by <span class="mono">${esc(c.victim)}</span></span></div>${isDemoClaim(c) ? badge("plain", "Judge demo claim") : ""}${c.status === "review" ? badge("warn", "Waiting for you") : claimBadge(c)}</div>
       <div class="kv">
         <div><span>Flight</span><b>${claimFlight(c)}</b></div>
         <div><span>Rules check</span><b>${c.missing ? "Operator published no record of this flight within 30 minutes of the claim" : "No rule broken in the signed record"}</b></div>
@@ -954,10 +1003,10 @@ function insurerPage() {
   return `
   <section class="wrap page">
     <div class="head"><h1>Insurer desk</h1><p>Claims the rules couldn't settle come here: the drone broke no rule, or its operator published no record. A person decides. The decision is signed with a quantum-safe key and the watchtower carries it out.</p></div>
-    ${guide("The insurer (judges: use the demo code)", ["Type the demo code <b>skyproof-demo</b>: a practice claim appears.", "Download the two photos and check each one: only the real one matches the fingerprint on chain. Open the sealed flight record.", "Write a reason and <b>approve</b> or <b>reject</b>: you see exactly what would be signed and posted. In demo mode nothing is posted."])}
+    ${guide("The insurer (judges: use the demo code)", ["Type the demo code <b>skyproof-demo</b>: a practice claim appears, already decided on chain.", "Check the two photos (only the real one matches the fingerprint on chain) and open the sealed flight record. Deciding the practice claim is a dry run.", "Claims <b>you</b> filed on the <a class='link' href='#/demo'>live demo</a> or the claims page show below as “Judge demo claim”. Decide one and it is <b>really signed and posted</b> with the insurer's key."])}
     <div class="card form ins-key">
       <label><span>Demo code (for judges)</span><input id="insCode" placeholder="type skyproof-demo" autocomplete="off" spellcheck="false" /></label>
-      <span class="muted tiny" id="insDemoNote">Demo mode uses a practice claim and a read-only key. The real insurer key is never published: it could approve fake claims.</span>
+      <span class="muted tiny" id="insDemoNote">The real insurer key is never published: it could approve fake claims. The demo code lets the SkyProof service sign with it only for judges' own demo claims.</span>
     </div>
     ${practice >= 0 ? `<div id="insPractice" hidden>
       <h2 class="sub-h">Practice claim <span class="muted tiny">(already decided on chain: ${data.claims[practice].decision?.approve ? "approved" : "rejected"})</span></h2>
@@ -976,6 +1025,7 @@ function insurerPage() {
   </section>`;
 }
 
+const isDemoClaim = (c: Data["claims"][number]) => !!data.demoWallets?.includes(c.victim);
 const practiceClaim = () => data.claims.findIndex((c) => c.decision && c.evidence && !c.missing);
 
 function insurerReady() {
@@ -1000,7 +1050,9 @@ function insurerReady() {
       const box = document.getElementById("insPractice");
       if (box) box.hidden = false;
       $$<HTMLButtonElement>(`[data-decide="${practice}"]`).forEach((b) => (b.disabled = false));
-      note.innerHTML = `✓ Demo mode on. Work through the practice claim below. Decisions are shown, not posted.`;
+      const mine = data.claims.map((c, i) => [c, i] as const).filter(([c]) => isDemoClaim(c) && c.status === "review");
+      for (const [, i] of mine) $$<HTMLButtonElement>(`[data-decide="${i}"]`).forEach((b) => (b.disabled = false));
+      note.innerHTML = `✓ Demo mode on. The practice claim below is a dry run.${mine.length ? ` <b>${mine.length} judge demo claim${mine.length > 1 ? "s" : ""}</b> waiting further down: deciding ${mine.length > 1 ? "them" : "it"} posts a real, signed decision.` : ` To decide a real claim on chain, file one on the <a class="link" href="#/demo">live demo</a> with a safe flight.`}`;
       box?.scrollIntoView({ behavior: "smooth", block: "start" });
     } catch {
       note.innerHTML = `<span class="alert inline">The demo key isn't published on this site.</span>`;
@@ -1058,6 +1110,19 @@ function insurerReady() {
         out.innerHTML = `<p class="alert">Write a reason first. It is stored on chain with your decision.</p>`;
         return;
       }
+      if (demo && !keys && i !== practice && isDemoClaim(c)) {
+        $$<HTMLButtonElement>(`[data-decide="${i}"]`).forEach((b) => (b.disabled = true));
+        out.innerHTML = `<p class="found"><i class="spin inline"></i>Signing with the insurer's key and posting the decision…</p>`;
+        try {
+          const r = await svc<{ tx: string; height?: number }>("/decide", { code: "skyproof-demo", flight: c.flight, victim: c.victim, approve, reason });
+          out.innerHTML = `<div class="result ${approve ? "ok" : "bad"}"><span class="icon">${approve ? "✓" : "✕"}</span><div><b>${approve ? "Approved." : "Rejected."} Decision signed with the insurer's key and posted.</b>
+            <span>${r.height ? `Block ${r.height.toLocaleString()} · ` : ""}the watchtower ${approve ? "pays the victim" : "keeps the deposit"} on its next check, about a minute.</span><span class="block">${txLink(r.tx)}</span></div></div>`;
+        } catch (err) {
+          out.innerHTML = `<p class="alert">${esc(err instanceof Error ? err.message : String(err))}</p>`;
+          $$<HTMLButtonElement>(`[data-decide="${i}"]`).forEach((b) => (b.disabled = false));
+        }
+        return;
+      }
       if (demo && (i === practice || !keys)) {
         const d = { flight: c.flight, victim: c.victim, approve, reason };
         out.innerHTML = `<div class="result ${approve ? "ok" : "bad"}"><span class="icon">${approve ? "✓" : "✕"}</span><div><b>Demo: ${approve ? "approved" : "rejected"}. Nothing was posted.</b>
@@ -1099,11 +1164,12 @@ function payoutFor(c: Data["claims"][number]) {
   if (c.status !== "paid") return undefined;
   const post = data.posts.find((p) => p.kind === "claim" && p.detail === c.flight && p.poster === c.victim);
   const used = new Set<string>();
-  for (const x of data.claims.filter((y) => y.status === "paid" && y.victim === c.victim)) {
+  const to = c.payTo ?? c.victim;
+  for (const x of data.claims.filter((y) => y.status === "paid" && (y.payTo ?? y.victim) === to)) {
     const xp = data.posts.find((p) => p.kind === "claim" && p.detail === x.flight && p.poster === x.victim);
     for (const b of data.batches) {
       if (xp && b.index <= xp.batch) continue;
-      const w = b.withdrawals.find((w) => w.recipient === x.victim && w.index !== undefined && !used.has(w.index));
+      const w = b.withdrawals.find((w) => w.recipient === to && w.index !== undefined && !used.has(w.index));
       if (!w) continue;
       used.add(w.index!);
       if (x === c) return { batch: b.index, amount: w.amount, tx: data.withdrawalsExecuted?.[w.index!], claimHeight: post?.height };
@@ -1115,7 +1181,7 @@ function payoutFor(c: Data["claims"][number]) {
 
 let tourFlight = "";
 function tourPage() {
-  const pick = flights.find((f) => f.id === tourFlight) ?? flights.find((f) => f.id.includes("-cheating-")) ?? flights[0];
+  const pick = flights.find((f) => f.id === tourFlight) ?? flights.find((f) => f.id.includes("-cheating-") && !data.demoFlights?.includes(f.id)) ?? flights[0];
   tourFlight = pick.id;
   const c = pick.claim;
   const sc = scenarioOf(pick);
@@ -1131,7 +1197,7 @@ function tourPage() {
     ${guide("Judges: start here", ["Read the steps top to bottom (about 3 minutes).", "Press each <b>Check</b> button: your browser asks QoreChain directly, so you don't have to trust this page.", "Pick another flight at the top to follow a different story."])}
     <div class="card tour-pick">
       <span class="muted">Follow this flight:</span>
-      <div class="seg">${flights.map((f) => `<button class="${f.id === pick.id ? "on" : ""}" data-tf="${esc(f.id)}">${esc(f.name)}</button>`).join("")}</div>
+      <div class="seg">${flights.filter((f) => f.id === pick.id || !data.demoFlights?.includes(f.id)).map((f) => `<button class="${f.id === pick.id ? "on" : ""}" data-tf="${esc(f.id)}">${esc(f.name)}</button>`).join("")}</div>
     </div>
     <ol class="tour">
       ${step(1, "The drone flies and asks permission", `Before every take-off, drop and landing the drone asks an AI safety check: “may I?”. Here's this flight's scenario played in 3D.`,
@@ -1164,6 +1230,7 @@ function tourPage() {
     <div class="card tour-next">
       <b>Try each role yourself</b>
       <div class="who-mini">
+        <a class="btn primary" href="#/demo">Do it yourself, live on chain</a>
         <a class="btn" href="#/claims">I was hurt: file a claim</a>
         <a class="btn" href="#/operator">I run drones: operator console</a>
         <a class="btn" href="#/insurer">I'm the insurer: review claims</a>
@@ -1238,6 +1305,348 @@ function tourReady() {
   txCheck("tFraud", "#tFraudOut", "Fraud proof");
 }
 
+/* ---------- the SkyProof service (rollup/src/cli/service.ts on the site's VM) ---------- */
+
+interface SvcStatus {
+  ok: boolean;
+  lastCycleAt: string;
+  cycleMs: number;
+  lastError: string;
+  busy: string;
+  chainHeight?: number;
+  inbox?: { head: number; consumed: number };
+  latestBatch?: { index: number; status: string };
+  faucet?: { address: string; balanceQor: string; perClaimQor: string };
+  demo?: { fundedToday: number; fundLimitPerDay: number; flightsToday: number; flightLimitPerDay: number; decisions: number };
+}
+
+async function svc<T>(path: string, body?: unknown): Promise<T> {
+  const r = await fetch(`/api/demo${path}`, body ? { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) } : { cache: "no-store" });
+  const j = (await r.json().catch(() => ({ error: `the service answered HTTP ${r.status}` }))) as T & { error?: string };
+  if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
+  return j;
+}
+
+/** Re-read the site's data (the service re-exports it from the chain every minute). True when it changed. */
+async function refreshData(): Promise<boolean> {
+  const res = await fetch("/skyproof.json", { cache: "no-store" });
+  if (!res.ok) return false;
+  const d = (await res.json()) as Data;
+  if (d.generatedAt === data.generatedAt) return false;
+  data = d;
+  flights = buildFlights(d);
+  showGenerated();
+  return true;
+}
+const showGenerated = () => ($("#generated").textContent = `Data read from QoreChain ${new Date(data.generatedAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}`);
+
+const ago = (iso: string) => {
+  const s = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
+  return s < 90 ? `${s} s ago` : s < 5400 ? `${Math.round(s / 60)} min ago` : `${Math.round(s / 3600)} h ago`;
+};
+
+/** One line on what the always-on service is doing, for the pages judges act on. */
+async function svcLine(el: HTMLElement) {
+  try {
+    const st = await svc<SvcStatus>("/status");
+    const fresh = !!st.lastCycleAt && Date.now() - new Date(st.lastCycleAt).getTime() < 3 * (st.cycleMs || 60_000);
+    el.className = `svc card ${fresh && st.ok ? "on" : "warn"}`;
+    el.innerHTML = `<span class="live-dot ${fresh ? "on" : ""}"></span><span><b>Watchtower ${fresh ? "online" : "delayed"}</b> · last check ${st.lastCycleAt ? ago(st.lastCycleAt) : "not yet"}${st.busy ? ` · now: ${esc(st.busy)}` : ""}${st.latestBatch ? ` · latest batch #${st.latestBatch.index} (${esc(st.latestBatch.status)})` : ""}${st.inbox && st.inbox.head > st.inbox.consumed ? ` · ${st.inbox.head - st.inbox.consumed} post(s) waiting for the next batch` : ""}${st.faucet ? ` · demo faucet ${qor(Math.round(Number(st.faucet.balanceQor) * 1e6))} QOR left` : ""}</span>`;
+    return st;
+  } catch {
+    el.className = "svc card warn";
+    el.innerHTML = `<span class="live-dot"></span><span><b>The SkyProof service isn't answering.</b> Demo actions are paused; everything else on this site still reads QoreChain directly.</span>`;
+    return undefined;
+  }
+}
+
+const TX_URL = (h: string) => `https://api-testnet.qore.host/cosmos/tx/v1beta1/txs/${h}`;
+const txLink = (h?: string) => (h ? `<a class="link mono" href="${TX_URL(h)}" target="_blank" rel="noopener">${esc(short(h, 6))}</a>` : "");
+
+/** Seconds until a batch leaves its challenge window. */
+const finalIn = (b: { submittedTime: number }) => Math.max(0, b.submittedTime + (data.rollup.challengeWindowSec ?? 3600) - (chain?.tipTime ?? Date.now() / 1000));
+
+/** A claim's progress, step by step, from the site's chain data. */
+function claimTrack(flight: string, victim: string, filedTx?: string): string {
+  const c = data.claims.find((x) => x.flight === flight && x.victim === victim);
+  const post = data.posts.find((p) => p.kind === "claim" && p.detail === flight && p.poster === victim);
+  const to = c?.payTo ?? victim;
+  const pending = data.pendingPayouts?.find((p) => p.recipient === to && p.reason.startsWith(`${flight}:`));
+  const pay = c ? payoutFor(c) : undefined;
+  const pb = pay ? data.batches.find((b) => b.index === pay.batch) : undefined;
+  const steps: ["done" | "now" | "todo" | "bad", string, string][] = [];
+  steps.push(["done", "Claim filed on QoreChain, with a 1 QOR deposit", filedTx ? `Transaction ${txLink(filedTx)}` : post ? `Block ${post.height.toLocaleString()}` : ""]);
+  steps.push(post ? ["done", `Settled in batch #${post.batch}`, "Every post in the inbox goes into the next batch, so nobody can drop a claim."] : ["now", "Waiting for the next batch", "The service settles waiting posts about once a minute."]);
+  if (!c) steps.push(["todo", "The watchtower opens the sealed record and checks the six rules", ""]);
+  else if (c.status === "open") steps.push(["now", "Watchtower: waiting for the flight's record", "The operator has 30 minutes to publish it. After that the insurer reviews the claim, knowing there is no record."]);
+  else if (c.verdict?.breach) steps.push(["bad", `Rule broken: ${brokenRules(c.verdict).map((r) => esc(RULE[r] ?? r)).join(", ")}`, "The watchtower decided this from the signed record. No person was involved."]);
+  else if (c.status === "review") steps.push(["now", c.missing ? "No record published: the insurer decides" : "No rule broken: the insurer decides", "A person reviews the claim and signs approve or reject on chain."]);
+  else if (c.decision) {
+    steps.push(["done", c.missing ? "No record published: sent to the insurer" : "No rule broken: sent to the insurer", ""]);
+    steps.push([c.decision.approve ? "done" : "bad", `Insurer ${c.decision.approve ? "approved" : "rejected"} the claim`, `“${esc(c.decision.reason)}” · signed on chain`]);
+  } else steps.push(["bad", "Rejected", "The signed record shows every rule was kept."]);
+  if (c?.status === "paid") {
+    if (pay && pb) {
+      steps.push(["done", `Payout of ${qor(pay.amount)} QOR in batch #${pay.batch}`, `5 QOR from the operator's claims pool plus the deposit back, to <span class="mono">${esc(short(to))}</span>.`]);
+      const left = finalIn(pb);
+      if (pay.tx) steps.push(["done", "Paid: the QOR is in the wallet", `Withdrawal ${txLink(pay.tx)}`]);
+      else if (pb.status === "finalized" || left === 0) steps.push(["now", "Batch final: sending the QOR", "The service executes the withdrawal within a minute."]);
+      else steps.push(["now", `Challenge window: payout released in about ${Math.ceil(left / 60)} min`, "For one hour anyone can prove the batch wrong and stop it. Then QoreChain releases the money."]);
+    } else steps.push(["now", "Payout signed by the judge: waiting for the next batch", pending ? `Transaction ${txLink(pending.tx)}` : ""]);
+  } else if (c?.status !== "rejected") steps.push(["todo", "Payout", "5 QOR plus the deposit back, if a rule was broken or the insurer approves."]);
+  return `<ol class="track">${steps.map(([st, t, d]) => `<li class="${st}"><span class="dot"></span><div><b>${t}</b>${d ? `<span class="muted tiny block">${d}</span>` : ""}</div></li>`).join("")}</ol>`;
+}
+
+/* ---------- live demo: a judge plays every role, for real, on QoreChain ---------- */
+
+interface DemoRun {
+  scenario?: string;
+  flight?: string;
+  flyTxs?: string[];
+  wallet?: ClaimWallet;
+  fundTx?: string;
+  claimTx?: string;
+  note?: string;
+  decision?: { approve: boolean; tx: string; reason: string };
+}
+const RUN_KEY = "skyproof.liveDemo.v1";
+const loadRun = (): DemoRun => {
+  try {
+    return JSON.parse(localStorage.getItem(RUN_KEY) ?? "{}") as DemoRun;
+  } catch {
+    return {};
+  }
+};
+let run: DemoRun = {};
+const saveRun = () => {
+  try {
+    localStorage.setItem(RUN_KEY, JSON.stringify(run));
+  } catch {
+    /* the run still works for this visit */
+  }
+};
+const DEMO_SC: { s: string; title: string; what: string; tone: "risky" | "safe" }[] = [
+  { s: "cheating", title: "Operator ignores “No”", what: "A person is hit. A rule is broken: the victim is paid automatically.", tone: "risky" },
+  { s: "wind", title: "Too windy, flew anyway", what: "The parcel blows onto a car. A rule is broken: paid automatically.", tone: "risky" },
+  { s: "normal", title: "Normal delivery", what: "Every rule kept. A claim goes to the insurer: you decide it in step 4.", tone: "safe" },
+  { s: "people_below", title: "Someone below, drone waits", what: "The drone waits for the person to leave. No rule broken: you decide as the insurer.", tone: "safe" },
+];
+
+function demoPage() {
+  run = loadRun();
+  const step = (n: number, who: string, title: string, body: string) =>
+    `<li class="card tour-step"><div class="tour-n">${n}</div><div class="tour-body"><span class="role-tag">${who}</span><h3>${title}</h3>${body}</div></li>`;
+  return `
+  <section class="wrap page">
+    <div class="head"><h1>Live demo: play every role</h1><p>Everything on this page really happens on QoreChain testnet, now. You fly a drone, get hurt by it, judge the claim and get paid. You don't need a wallet or any QOR: the demo faucet funds a fresh wallet for you.</p></div>
+    <div class="svc card" id="svcBox"><span class="live-dot"></span><span>Checking the SkyProof service…</span></div>
+    <ol class="tour">
+      ${step(1, "Drone operator", "Fly a delivery", `<p class="muted">Pick what happens. The drone signs every part of its log with ML-DSA-87, seals it with ML-KEM-1024 and posts it to the rollup, one transaction per part.</p><div id="d1"></div>`)}
+      ${step(2, "Person on the ground", "File a claim against that flight", `<p class="muted">Signed in this browser with a fresh quantum-safe wallet. The faucet sends it 1.6 test QOR: the 1 QOR deposit plus fees.</p><div id="d2"></div>`)}
+      ${step(3, "Watchtower", "The rules judge the claim", `<p class="muted">The always-on watchtower settles each batch, opens the sealed record with its key, and checks the six rules. Updates every 15 seconds.</p><div id="d3"></div>`)}
+      ${step(4, "Insurer", "Decide the claims the rules can't", `<p class="muted">Only claims with no broken rule come here. Your decision is signed with the insurer's key and posted on chain.</p><div id="d4"></div>`)}
+      ${step(5, "Investigator", "Open the sealed record", `<p class="muted">The public sees only ciphertext. The investigator's ML-KEM-1024 key opens it.</p><div id="d5"></div>`)}
+      ${step(6, "Person on the ground", "Get paid", `<p class="muted">The payout waits out the rollup's one-hour challenge window, then QoreChain releases it to your wallet. Come back to this page: it remembers your run.</p><div id="d6"></div>`)}
+    </ol>
+    <div class="card tour-next"><b>Done, or want another story?</b><div class="who-mini"><button class="btn" id="dReset">Start a new run</button><a class="btn" href="#/tour">Guided tour of past flights</a><a class="btn" href="#/proof">Verify every batch</a></div></div>
+  </section>`;
+}
+
+let demoPoll: ReturnType<typeof setInterval> | undefined;
+let demoKem: { address: string; seed: string } | undefined;
+function demoReady() {
+  const d1 = $("#d1"), d2 = $("#d2"), d3 = $("#d3"), d4 = $("#d4"), d5 = $("#d5"), d6 = $("#d6");
+  const busy = (el: HTMLElement, t: string) => (el.innerHTML = `<p class="found"><i class="spin inline"></i>${esc(t)}</p>`);
+  const fail = (el: HTMLElement, e: unknown, again?: () => void) => {
+    el.innerHTML = `<p class="alert">${esc(e instanceof Error ? e.message : String(e))}</p>${again ? `<button class="btn sm" data-again>Try again</button>` : ""}`;
+    if (again) el.querySelector<HTMLButtonElement>("[data-again]")!.onclick = again;
+  };
+  const claim = () => (run.flight && run.wallet ? data.claims.find((c) => c.flight === run.flight && c.victim === run.wallet!.address) : undefined);
+
+  const render1 = () => {
+    if (run.flight) {
+      const sc = DEMO_SC.find((x) => x.s === run.scenario);
+      const f = flights.find((x) => x.id === run.flight);
+      d1.innerHTML = `<div class="result ok"><span class="icon">✓</span><div><b>Flown and posted: “${esc(sc?.title ?? run.scenario ?? "")}”</b>
+        <span>Flight <span class="mono">${esc(run.flight)}</span> · ${run.flyTxs?.length ?? 0} transactions${f ? ` · ${f.records} records in ${f.segs.length} signed, sealed parts · ${f.intact ? "signatures valid" : "check failed"}` : " · appears in the flight list after the next batch"}</span>
+        <span class="tiny">${(run.flyTxs ?? []).slice(0, 6).map(txLink).join(" · ")}${(run.flyTxs?.length ?? 0) > 6 ? " …" : ""}</span></div></div>
+        ${f ? `<p class="tiny"><a class="link" href="#/flights/${encodeURIComponent(f.id)}">See its signed record and tamper test →</a></p>` : ""}`;
+      return;
+    }
+    d1.innerHTML = `<div class="picker demo-pick">${DEMO_SC.map((x) => `<button class="${x.tone}" data-sc="${x.s}"><b>${esc(x.title)}</b><span>${esc(x.what)}</span></button>`).join("")}</div>
+      <p class="tiny muted">Takes about a minute: each part is a separate QoreChain transaction.</p>`;
+    $$<HTMLButtonElement>("[data-sc]", d1).forEach((b) => (b.onclick = () => fly(b.dataset.sc!)));
+  };
+  const fly = async (scenario: string) => {
+    busy(d1, "Flying and posting each signed, sealed part to QoreChain… (about a minute)");
+    try {
+      const r = await svc<{ flight: string; txs: string[] }>("/fly", { scenario, drone: "SKY-001" });
+      run = { scenario, flight: r.flight, flyTxs: r.txs };
+      saveRun();
+      renderAll();
+    } catch (e) {
+      fail(d1, e, render1);
+    }
+  };
+
+  const render2 = () => {
+    if (!run.flight) {
+      d2.innerHTML = `<p class="muted tiny">Fly a delivery first (step 1).</p>`;
+      return;
+    }
+    if (run.claimTx) {
+      d2.innerHTML = `<div class="result ok"><span class="icon">✓</span><div><b>Claim filed: “${esc(run.note ?? "")}”</b>
+        <span>From your demo wallet <span class="mono">${esc(short(run.wallet!.address))}</span> · faucet ${txLink(run.fundTx)} · claim ${txLink(run.claimTx)}</span></div></div>`;
+      return;
+    }
+    if (document.getElementById("dNote")) return;
+    d2.innerHTML = `<label class="claim-form"><span>What happened?</span><textarea id="dNote" rows="2" maxlength="280">${esc(run.scenario === "wind" ? "The parcel blew onto my parked car and dented the roof." : "The parcel fell on me near the drop point.")}</textarea></label>
+      <div class="file-actions"><button class="btn primary" id="dFile">File my claim on QoreChain</button><span class="muted tiny">Makes a wallet, funds it, registers its ML-DSA-87 key, pays the deposit and files.</span></div><div id="d2out"></div>`;
+    $("#dFile").onclick = fileIt;
+  };
+  const fileIt = async () => {
+    const out = $("#d2out");
+    const note = $<HTMLTextAreaElement>("#dNote").value.trim() || "Hurt by the drone's parcel.";
+    $<HTMLButtonElement>("#dFile").disabled = true;
+    try {
+      if (!data.claimsPool) throw new Error("The site's data has no claims pool.");
+      run.wallet ??= await newWallet();
+      saveRun();
+      busy(out, "Asking the demo faucet to fund your new wallet…");
+      const f = await svc<{ tx: string }>("/fund", { address: run.wallet.address });
+      run.fundTx = f.tx;
+      saveRun();
+      for (let i = 0; i < 30 && (await balanceUqor(run.wallet.address)) < 1_450_000n; i++) await new Promise((r) => setTimeout(r, 3000));
+      const r = await fileClaim(client, run.wallet, { rollupId: data.rollup.rollupId, poolAccount: data.claimsPool.account, depositUqor: BigInt(data.claimsPool.depositUqor), claim: { flight: run.flight!, note, drone: "SKY-001" } }, (s) => busy(out, s));
+      run.claimTx = r.txhash;
+      run.note = note;
+      saveRun();
+      renderAll();
+    } catch (e) {
+      fail(out, e);
+      const b = document.getElementById("dFile") as HTMLButtonElement | null;
+      if (b) b.disabled = false;
+    }
+  };
+
+  const render3 = () => {
+    d3.innerHTML = run.claimTx ? claimTrack(run.flight!, run.wallet!.address, run.claimTx) : `<p class="muted tiny">File the claim first (step 2).</p>`;
+  };
+
+  const render4 = () => {
+    const c = claim();
+    if (run.decision) {
+      d4.innerHTML = `<div class="result ${run.decision.approve ? "ok" : "bad"}"><span class="icon">${run.decision.approve ? "✓" : "✕"}</span><div><b>You ${run.decision.approve ? "approved" : "rejected"} the claim, signed with the insurer's key</b><span>“${esc(run.decision.reason)}” · ${txLink(run.decision.tx)} · the watchtower carries it out on its next check.</span></div></div>`;
+      return;
+    }
+    if (!c) {
+      d4.innerHTML = `<p class="muted tiny">${run.claimTx ? "Waiting for the watchtower to judge your claim (step 3)." : "Nothing to decide yet."}</p>`;
+      return;
+    }
+    if (c.verdict?.breach) {
+      d4.innerHTML = `<div class="result ok"><span class="icon">✓</span><div><b>Nothing for the insurer to do</b><span>The signed record proves a rule was broken, so the watchtower paid without asking anyone. Start a new run with a safe flight to try the insurer's side.</span></div></div>`;
+      return;
+    }
+    if (c.status !== "review") {
+      d4.innerHTML = `<p class="muted tiny">This claim is ${esc(c.status)}.</p>`;
+      return;
+    }
+    if (document.getElementById("dReason")) return;
+    d4.innerHTML = `<p class="tiny">The flight broke no rule, so you, the insurer, decide. <a class="link" href="#/insurer">The full insurer desk</a> also checks the victim's photo.</p>
+      <label class="claim-form"><span>Your reason (stored on chain)</span><input id="dReason" maxlength="140" value="Demo: reviewed the sealed record and the victim's account." /></label>
+      <div class="file-actions"><button class="btn primary" data-ap="1">Approve: pay 5 QOR + deposit</button><button class="btn" data-ap="0">Reject: keep the deposit</button></div><div id="d4out"></div>`;
+    $$<HTMLButtonElement>("[data-ap]", d4).forEach(
+      (b) =>
+        (b.onclick = async () => {
+          const approve = b.dataset.ap === "1";
+          const reason = $<HTMLInputElement>("#dReason").value.trim();
+          $$<HTMLButtonElement>("[data-ap]", d4).forEach((x) => (x.disabled = true));
+          busy($("#d4out"), "Signing the decision with the insurer's key and posting it…");
+          try {
+            const r = await svc<{ tx: string; reason: string }>("/decide", { code: "skyproof-demo", flight: run.flight, victim: run.wallet!.address, approve, reason });
+            run.decision = { approve, tx: r.tx, reason: r.reason };
+            saveRun();
+            renderAll();
+          } catch (e) {
+            fail($("#d4out"), e);
+            $$<HTMLButtonElement>("[data-ap]", d4).forEach((x) => (x.disabled = false));
+          }
+        }),
+    );
+  };
+
+  const render5 = () => {
+    const f = run.flight ? flights.find((x) => x.id === run.flight) : undefined;
+    if (!f) {
+      d5.dataset.open = "";
+      d5.innerHTML = `<p class="muted tiny">${run.flight ? "Available once the flight is settled in a batch (about a minute)." : "Fly a delivery first."}</p>`;
+      return;
+    }
+    if (d5.dataset.open === f.id) return;
+    d5.dataset.open = f.id;
+    d5.innerHTML = `<div class="file-actions"><button class="btn" id="dOpen">Open it with the demo investigator key</button><span class="muted tiny">Decrypts in your browser. The site never holds the plain record.</span></div><div id="d5out"></div>`;
+    $("#dOpen").onclick = async () => {
+      try {
+        if (!demoKem) {
+          const k = await fetch("demo-investigator.json").then((x) => x.json());
+          demoKem = { address: k.address, seed: k.mlkem1024Seed };
+        }
+        const r = openFlight(data as unknown as InvestigatorData, f.id, demoKem);
+        $("#d5out").innerHTML = `<div class="inv-mini"><div class="result ${r.verdict.breach ? "bad" : "ok"}"><span class="icon">${r.verdict.breach ? "✕" : "✓"}</span><div><b>${r.verdict.breach ? "Rule broken" : "No rule broken"}</b><span>${r.segments} sealed parts opened · ${r.recs.length} records${r.errors.length ? ` · problems: ${esc(r.errors.join("; "))}` : " · every part matches the drone's signature"}</span></div></div>
+          <div class="rules">${ruleList(brokenRules(r.verdict))}</div>${r.permit ? `<div class="mapbox">${drawFlight(r.recs, r.permit, r.verdict)}</div>` : ""}</div>`;
+      } catch (e) {
+        fail($("#d5out"), e);
+      }
+    };
+  };
+
+  const render6 = async () => {
+    if (!run.wallet || !run.claimTx) {
+      d6.innerHTML = `<p class="muted tiny">Your payout shows here.</p>`;
+      return;
+    }
+    const c = claim();
+    const pay = c ? payoutFor(c) : undefined;
+    let bal = "…";
+    try {
+      bal = qor((await balanceUqor(run.wallet.address)).toString());
+    } catch {
+      /* shown as … */
+    }
+    d6.innerHTML = `<div class="kv"><div><span>Your demo wallet</span><b class="mono">${esc(short(run.wallet.address))}</b></div><div><span>Balance now, read live</span><b>${bal} QOR</b></div>
+      <div><span>Outcome</span><b>${c?.status === "paid" ? (pay?.tx ? `Paid ${qor(pay.amount)} QOR ✓` : "Payout approved, waiting for the challenge window") : c?.status === "rejected" ? "Rejected: no payout, deposit kept" : "Not decided yet"}</b></div></div>
+      ${pay?.tx ? `<p class="found ok">✓ ${qor(pay.amount)} QOR arrived: 5 QOR compensation plus your 1 QOR deposit back. Withdrawal ${txLink(pay.tx)}.</p>` : ""}`;
+  };
+
+  const renderAll = () => {
+    render1();
+    render2();
+    render3();
+    render4();
+    render5();
+    render6();
+  };
+  renderAll();
+  $("#dReset").onclick = () => {
+    run = {};
+    saveRun();
+    renderAll();
+    d1.scrollIntoView({ behavior: "smooth", block: "center" });
+  };
+  const tick = async () => {
+    if (!document.getElementById("d3")) return clearInterval(demoPoll);
+    await svcLine($("#svcBox"));
+    if (await refreshData().catch(() => false)) renderAll();
+    else {
+      render3();
+      render6();
+    }
+  };
+  clearInterval(demoPoll);
+  tick();
+  demoPoll = setInterval(tick, 15_000);
+}
+
 /* ---------- operator console ---------- */
 
 const claimCost = claimPaid;
@@ -1291,11 +1700,22 @@ function operatorPage() {
     </div>
     <div class="stats op-stats">${stats.map(([id, v, k]) => `<div><b${id ? ` id="${id}"` : ""}>${esc(v)}</b><span>${esc(k)}</span></div>`).join("")}</div>
 
+    <h2 class="sub-h">Fly a demo flight now</h2>
+    <div class="card op-fly">
+      <p class="muted tiny">Be this operator: one of its drones flies a delivery, and every part of the log is signed (ML-DSA-87), sealed (ML-KEM-1024) and posted to QoreChain as its own transaction. Watch the parts arrive in the live activity below. Then file a claim on it, or play every role on the <a class="link" href="#/demo">live demo</a>.</p>
+      <div class="lookup-row op-fly-row">
+        <select id="opSc" aria-label="What happens">${DEMO_SC.map((x) => `<option value="${x.s}">${esc(x.title)}</option>`).join("")}</select>
+        <select id="opDrone" aria-label="Drone">${Object.keys(data.drones).filter((d) => FLEET[d]).map((d) => `<option value="${esc(d)}">${esc(d)} · ${esc(FLEET[d].area.split(",")[0])}</option>`).join("")}</select>
+        <button class="btn primary" id="opFly">Fly it on QoreChain</button>
+      </div>
+      <div id="opFlyOut" aria-live="polite"></div>
+    </div>
+
     <h2 class="sub-h">Live chain activity <span class="live-dot" id="opLiveDot"></span></h2>
     <div class="card op-live">
       <p class="muted tiny" id="opLiveNote">Reading the rollup's inbox on QoreChain…</p>
       <div class="scroll"><table class="table"><thead><tr><th>Post</th><th>From</th><th>Size</th><th>Block</th></tr></thead><tbody id="opLive"></tbody></table></div>
-      <p class="muted tiny">Every message to the rollup in order, read live from the chain every 10 seconds. A drone in the air posts a signed, sealed part of its flight every few seconds (run <code>npm run fly</code> in <code>rollup/</code> to see one arrive).</p>
+      <p class="muted tiny">Every message to the rollup in order, read live from the chain every 10 seconds. A drone in the air posts a signed, sealed part of its flight every few seconds (fly one above to see it arrive).</p>
     </div>
 
     <h2 class="sub-h">Your drones</h2>
@@ -1313,6 +1733,24 @@ function operatorPage() {
 let opPoll: ReturnType<typeof setInterval> | undefined;
 function operatorReady() {
   const op = data.rollup.creator;
+  $("#opFly").addEventListener("click", async () => {
+    const btn = $<HTMLButtonElement>("#opFly");
+    const out = $("#opFlyOut");
+    const scenario = $<HTMLSelectElement>("#opSc").value;
+    btn.disabled = true;
+    out.innerHTML = `<p class="found"><i class="spin inline"></i>Flying and posting each signed, sealed part to QoreChain… (about a minute)</p>`;
+    try {
+      const r = await svc<{ flight: string; txs: string[]; drone: string }>("/fly", { scenario, drone: $<HTMLSelectElement>("#opDrone").value });
+      out.innerHTML = `<div class="result ok"><span class="icon">✓</span><div><b>Flight posted: ${r.txs.length} transactions</b>
+        <span>Flight <span class="mono">${esc(r.flight)}</span> · drone ${esc(r.drone)} · it joins the flight log after the next batch (about a minute).</span>
+        <span class="tiny">${r.txs.slice(0, 6).map(txLink).join(" · ")}${r.txs.length > 6 ? " …" : ""}</span></div></div>
+        <p class="tiny"><a class="link" href="#/claims/${encodeURIComponent(r.flight)}">File a claim on this flight →</a></p>`;
+    } catch (e) {
+      out.innerHTML = `<p class="alert">${esc(e instanceof Error ? e.message : String(e))}</p>`;
+    } finally {
+      btn.disabled = false;
+    }
+  });
   const known = new Map(data.posts.map((p) => [`${p.height}|${p.poster}`, p]));
   const label = (poster: string, height: number) => {
     const k = known.get(`${height}|${poster}`);
@@ -1360,6 +1798,7 @@ const pages: Record<string, [() => string, (() => void)?]> = {
   insurer: [insurerPage, insurerReady],
   operator: [operatorPage, operatorReady],
   tour: [tourPage, tourReady],
+  demo: [demoPage, demoReady],
 };
 
 function route() {
@@ -1405,6 +1844,8 @@ async function live() {
     $("#live").textContent = "Offline · saved data";
   }
   setInterval(() => tick().catch(() => undefined), 20_000);
+  // The service re-exports the data from the chain every minute; pages read it when they render.
+  setInterval(() => refreshData().catch(() => undefined), 60_000);
 }
 
 async function main() {
@@ -1418,7 +1859,7 @@ async function main() {
     return;
   }
   flights = buildFlights(data);
-  $("#generated").textContent = `Data from ${new Date(data.generatedAt).toLocaleDateString()}`;
+  showGenerated();
   $("#menu").addEventListener("click", () => {
     const open = document.body.classList.toggle("menu-open");
     $("#menu").setAttribute("aria-expanded", String(open));
