@@ -24,7 +24,8 @@
     "fraud-demo": "tsx src/cli/fraud-demo.ts",
     "investigator-key": "tsx src/cli/investigator-key.ts",
     "insurer-key": "tsx src/cli/insurer-key.ts",
-    "service": "tsx src/cli/service.ts"
+    "service": "tsx src/cli/service.ts",
+    "judge": "tsx src/cli/judge.ts"
   },
   "dependencies": {
     "@cosmjs/stargate": "^0.39.0",
