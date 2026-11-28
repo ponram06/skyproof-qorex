@@ -547,3 +547,21 @@ tr.hit td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
   .svc { font-size: 13px; }
   .tour-step { padding: 14px !important; }
 }
+/* every select and text field looks the same, wherever it is */
+.op-fly select, .tour-step textarea, .tour-step input:not([type="file"]):not([type="radio"]) { font: 15px var(--sans); padding: 10px 12px; border: 1px solid var(--line-2); border-radius: 10px; background: var(--bg); color: var(--ink); width: 100%; max-width: 100%; box-sizing: border-box; }
+.op-fly-row .btn { flex: 0 0 auto; }
+.table td.mono, .op-live td.mono { white-space: nowrap; }
+.op-live .table td { white-space: nowrap; }
+@media (max-width: 600px) {
+  .op-fly-row { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .op-fly-row .btn { width: 100%; }
+  .stats > div { min-width: 0; }
+  .stats span { overflow-wrap: anywhere; }
+}
+.review-head { flex-wrap: wrap; }
+.review-head .grow { flex: 1 1 220px; min-width: 0; overflow-wrap: anywhere; }
+.badge { max-width: 100%; }
+@media (max-width: 600px) { .badge { white-space: normal; } }
+.tamper { flex-wrap: wrap; }
+.tamper .grow { min-width: 0; overflow-wrap: anywhere; }
+@media (max-width: 600px) { .tamper .grow { flex-basis: 100%; } .tamper .btn { flex: 1 1 auto; } }
