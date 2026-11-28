@@ -242,7 +242,7 @@ function home() {
   </section>
 
   <section class="wrap section" id="demo">
-    <div class="head"><h2>Try it</h2><p>Pick a situation. Green ones are safe flights; red ones break a rule. Watch the drone, and read each step under the view as it happens.</p></div>
+    <div class="head"><h2>Try it</h2><p>Pick a situation. Green ones are safe flights; red ones break a rule. Watch the drone, and read each step under the view as it happens. This animation is a simulation in your browser; the real flights on QoreChain are on the <a class="link" href="#/flights">Flights</a> page, and you can fly one yourself in the <a class="link" href="#/demo">live demo</a>.</p></div>
     <div class="demo">
       <div class="picker" role="tablist" aria-label="Flight">
         ${SHOWN.map((s) => `<button role="tab" data-s="${s}" class="${SAFE.includes(s) ? "safe" : "risky"}"><b>${esc(SCENARIO[s].name)}</b><span>${esc(SCENARIO[s].hint)}</span></button>`).join("")}
