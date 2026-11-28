@@ -1692,7 +1692,7 @@ function operatorPage() {
   return `
   <section class="wrap page">
     <div class="head"><h1>Operator console</h1><p>Everything QoreChain holds about this operator's drones. Nobody can edit any of it, not even the operator.</p></div>
-    ${guide("Drone operators", ["See your drones, where each may fly, and every flight they signed.", "See the claims against you and what they cost.", "Watch the rollup's inbox live: each new flight part appears as it is posted."])}
+    ${guide("Drone operators", ["<b>Fly a demo flight</b> below: every part is signed, sealed and posted to QoreChain.", "Watch the rollup's inbox live: each new flight part appears as it is posted.", "See your drones, every flight they signed, and the claims against you with what they cost."])}
     <div class="card op-id">
       <div class="grow"><span class="muted tiny">Operator (rollup creator)</span><b class="mono">${esc(op)}</b></div>
       ${badge(data.rollup.status === "active" ? "ok" : "warn", `Rollup ${data.rollup.rollupId} · ${data.rollup.status}`)}
